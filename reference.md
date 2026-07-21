@@ -563,3 +563,46 @@ user asked for it as a visible report-level filter in the pane instead. Both lea
   relaunch pbip → poll new port/catalog → poll until the new column answers a DAX probe
   (cache.abf's old schema answers first) → verify counts → user eyeballs pane and saves.
 
+
+### 2026-07-22 (field-parameter retarget + period-comparison measures on a survey dashboard)
+
+Task: on a survey-dashboard PBIP, fold blank axis members into an "Others" category
+(field-parameter-driven chart) and add previous-period comparison cards driven by a
+timeline slicer's quarter/year granularity. Four learnings, all verified live:
+
+- **Retargeting a field parameter has THREE attachment points, and the third fails
+  silently as a single collapsed bar.** Changing a Selector-style calc table's
+  `NAMEOF` entry requires updating (1) the calc-table source, (2) the bound visual's
+  Category projection (Property/queryRef), AND (3) the parameter SLICER's stored
+  selection — the `'''Table''[Col]'` literal appears TWICE in its visual.json (the
+  `Where...In.Values` literal and `Annotations.filterExpressionMetadata.
+  decomposedIdentities`). A stale literal filters the parameter table to zero rows and
+  the chart renders ONE unsegmented total bar — zero errors anywhere. Grep the report
+  for the old NAMEOF literal (`Table''\[Col\]`) after any parameter retarget.
+- **SWITCH/IF branches cannot return table expressions, and TMDL won't tell you.** A
+  measure with `VAR w = SWITCH(TRUE(), cond1, DATESBETWEEN(...), ...)` loads fine and
+  fails only at query time: `Calculation error in measure '...': The True/False
+  expression does not specify a column`. Compute scalar start/end dates in the SWITCH,
+  then one `DATESBETWEEN(col, start, end)`.
+- **A fact-bounded calendar breaks whole-period detection at the data edge.** With
+  `CALENDAR(MIN(fact), MAX(fact))`, a timeline's whole-quarter selection clips to the
+  last fact date (Apr 1–Jun 30 became Apr 1–Jun 18), so `MAX = EOMONTH(...)` tests fail
+  for the current period — the most common selection. Accept bounds equal to the
+  calendar's global MIN/MAX (`CALCULATE(MIN/MAX('Calendar'[Date]), ALL('Calendar'))`)
+  as period-aligned, and anchor the shifted window at the PERIOD START of the selection
+  min (`DATE(YEAR(_minD), 3*QUARTER(_minD)-2, 1)`), not at `_minD` itself (a clipped
+  start would shift the window mid-month).
+- **To screenshot-verify visuals that are blank in the default state** (e.g. comparison
+  measures gated to a sub-period selection), temporarily add a hand-authored PAGE-level
+  Advanced date filter to page.json (`filterConfig` with `Version: 2`, two `Comparison`
+  nodes, `ComparisonKind` 2/4, `datetime'YYYY-MM-DDT00:00:00'` literals — accepted by
+  Desktop first try), render, screenshot, then remove it. Beats fighting a WebView
+  custom slicer with synthetic clicks (timeline cell clicks in edit mode never
+  registered).
+- Practical minimum height for a hand-added value-only cardVisual: an 18px-tall card
+  with 8pt text rendered NOTHING (fully on-page, measure verified non-blank); the same
+  card at 24px rendered. Treat ~24px as the floor.
+- Overlay pattern for dual-audience cards: a cloned card at identical geometry, higher
+  z, measures gated to the complementary audience (`NOT [HasRLS]`), `showBlankAs ' '`,
+  same tooltip section — each audience sees exactly one populated layer, hit-testing
+  and tooltips stay intact.
