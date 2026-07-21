@@ -144,3 +144,7 @@ that was wrong or incomplete, a better procedure:
    name. Before committing an edit, run the banned-token grep audit — the token list
    itself lives OUTSIDE this skill (host repo private notes), because listing the
    banned names here would leak them.
+6. **Version every learning push.** After the commit passes the audit and is pushed,
+   tag it: minor bump (`vX.Y+1.0`) for new learnings or rule changes, patch for
+   typo/sanitization fixes, major only for breaking restructures. Push the tag
+   (`git push origin <tag>`). An unpushed or untagged learning batch is unfinished work.

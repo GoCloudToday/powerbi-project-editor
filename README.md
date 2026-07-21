@@ -50,6 +50,13 @@ git -C "$env:USERPROFILE\.claude\skills\powerbi-project-editor" pull
 
 (macOS/Linux: `git -C ~/.claude/skills/powerbi-project-editor pull`)
 
+## Versioning
+
+Semantic tags on `main`: **minor** bump (`v1.1.0`) for each batch of new learnings or
+rule changes, **patch** for typo/sanitization fixes, **major** reserved for breaking
+restructures of the skill contract. `git tag -l` for history; pin a machine to a
+version with `git checkout vX.Y.Z` if you need reproducibility over freshness.
+
 ## Contents
 
 | File | Purpose |
