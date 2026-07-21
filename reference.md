@@ -531,3 +531,35 @@ field anywhere. Resolved same-session with one user refresh. The reusable proced
   -Scope CurrentUser -Force` from PSGallery restored Invoke-ASCmd in ~1 min — faster
   than any DLL-copy workaround; matches what the repo tools already import.
 
+### 2026-07-21 (hand-authored report-level filter replaces a calc-table hard exclusion)
+
+Follow-up on the same request: after shipping the exclusion INSIDE the calc table, the
+user asked for it as a visible report-level filter in the pane instead. Both learnings:
+
+- **"Filter out X from the report" usually wants a PANE filter, not a hard exclusion.**
+  Convert, don't stack: a hard calc-table filter under a pane filter makes the toggle
+  lie (unchecking the pane card restores only the rows the calc table kept). Remove the
+  hard filter when the pane filter lands; verify parity by emulating the pane filter
+  engine-side (`CALCULATE(COUNTROWS(T), T[Col] <> "X")`) and matching the old hard-
+  filtered counts exactly (here: same 7,114 for the key scenario). Bonus of the pane
+  route: it naturally covered sibling record types the hard filter had deliberately
+  skipped (886 rows total vs 7) — and that widening is one visible click to undo.
+- **PBIR report-level filter, authored by hand, accepted by Desktop first try** —
+  minimal working shape inside report.json `filterConfig.filters[]`:
+  `{name: <unique-hex>, displayName, ordinal: 0, field: {Column: {Expression:
+  {SourceRef: {Entity}}, Property}}, type: "Categorical", filter: {Version: 2, From:
+  [{Name, Entity, Type: 0}], Where: [{Condition: {Not: {Expression: {In: {Expressions:
+  [{Column: {Expression: {SourceRef: {Source}}, Property}}], Values: [[{Literal:
+  {Value: "'X'"}}]]}}}}}]}, howCreated: "User", objects: {general: [{properties:
+  {isInvertedSelectionMode: {expr: {Literal: {Value: "true"}}}}}]}}`.
+  `isInvertedSelectionMode: true` is what renders the card as "is not X" (matches how
+  Desktop saves an excluded categorical selection). NOT-IN keeps blank/null rows —
+  correct default when the column is a lookup that can miss. The filter column was
+  added to the calc table itself (lookup via ALLNOBLANKROW MAXX-FILTER), so no
+  relationship path to the filtered visuals is needed.
+- Calc-table-only DAX edits (new ADDCOLUMNS output column, removed FILTER wrapper) plus
+  a report.json edit needed NO refresh — reopen recalculated from loaded data. The full
+  cycle: user saves+closes Desktop → edit files → offline TOM parse + JSON parse →
+  relaunch pbip → poll new port/catalog → poll until the new column answers a DAX probe
+  (cache.abf's old schema answers first) → verify counts → user eyeballs pane and saves.
+
