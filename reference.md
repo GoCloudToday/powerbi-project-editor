@@ -499,3 +499,35 @@ evidence and reusable recipe:
   noise. Robust: iterate $_.ChildNodes LocalName/InnerText, or save raw XML and parse
   in Python (ElementTree, namespace urn:schemas-microsoft-com:xml-analysis:rowset).
 
+### 2026-07-21 (missing business attribute — dataflow export closes the gap without a probe refresh)
+
+Request: "filter out prospect accounts" from a DQ report whose model had NO account-type
+field anywhere. Resolved same-session with one user refresh. The reusable procedure:
+
+- **Prove absence at engine level before designing.** Enumerated every column of every
+  table via TMSCHEMA_COLUMNS + TMSCHEMA_TABLES on the live Desktop engine (not just
+  TMDL grep — calc tables' inferred columns don't all appear as named blocks). Also
+  killed the plausible proxy definition with data: "account without an ERP number =
+  prospect" fell because zero such accounts had revenue under ANY of three revenue
+  columns (a 92k-account model). Report the definition gap; don't guess a proxy.
+- **The upstream dataflow's exported .json is the decisive schema oracle, no refresh
+  needed.** Have the user download it from the service (dataflow → Export .json). Its
+  `pbi:mashup.document` holds the complete M of every entity, including native SQL
+  passed to Value.NativeQuery — there we found the source already SELECTed the
+  account-type option-set label (LocalizedLabel joined from OptionsetMetadata) that the
+  model's own SelectColumns was dropping. Outcome flipped from "vendor must extend the
+  dataflow" to "local M edit + one refresh".
+- **Filter-by-label edits: verify the exact label AFTER refresh** with a distinct-values
+  sweep (SUMMARIZECOLUMNS on the new column). Here the guessed label matched verbatim;
+  if it hadn't, the calc-table filter would silently no-op (DAX equality forgives case
+  and trailing spaces, nothing else).
+- Calc-table exclusion shape that validated cleanly: build the union as before, then
+  `VAR ids = SELECTCOLUMNS(FILTER(ALLNOBLANKROW('Dim'), <label test>), "@k", key)` and
+  `FILTER(__base, NOT([Type]="X" && [Key] IN ids))` before the final ADDCOLUMNS —
+  ALLNOBLANKROW per the blank-row circular-dependency rule.
+- Environment recovery: Desktop's own AdomdClient DLL under `C:\Program Files\
+  WindowsApps\...` is ACL-denied even for reading (Add-Type "Access is denied"), and no
+  SqlServer module existed in either PowerShell edition. `Install-Module SqlServer
+  -Scope CurrentUser -Force` from PSGallery restored Invoke-ASCmd in ~1 min — faster
+  than any DLL-copy workaround; matches what the repo tools already import.
+
