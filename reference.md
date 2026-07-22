@@ -663,3 +663,24 @@ refs as DATESBETWEEN bounds are fine). Year-vs-quarter disambiguation when both 
 year mode only if the selection spans ≥4 quarters. Color measures should derive from
 the display string's arrow character (`LEFT(s,1) = UNICHAR(9650)`) instead of
 recomputing the delta — one source of truth, invertible per KPI (risk metrics: up=red).
+
+### 2026-07-22 (round 4 — final comparison rules + card text positioning lever)
+
+- Requirement converged after two rounds of feedback; final rules worth pattern-izing
+  for "period comparison" asks: show the delta ONLY when the selection is exactly one
+  whole period (multi-period, sub-period, or no prior data → blank), and when a
+  geo/dimension filter narrows scope, show BOTH the global-reference figures (original
+  divisional row) and the same-scope previous-period delta as stacked lines. Gate via
+  a single hidden date-valued 'Prev Start' measure that returns BLANK unless the
+  selection is a single (edge-clipped) quarter — every consumer then blanks for free,
+  and even the footnote can key its comparison sentence off it.
+- **Positioning text inside a hand-built new-card: use `visualContainerObjects.
+  padding.top` (…D literal), NOT `cardCalloutArea.paddingTop`.** Measured: on a cloned
+  card, callout paddingTop 26L rendered identically to 4L (text did not move), while
+  container padding.top 26D shifted the text down exactly 26px. Also: shrinking a
+  card to make room (h 61→26) clips the value to a few-pixel sliver — keep the
+  original card height and move the TEXT with container padding; transparent
+  full-height overlaps are harmless.
+- Stacked dual-audience slot recipe (verified rendering): original row text pulled up
+  via its callout padding (24→4), overlay clone keeps identical rect, container
+  padding.top ≈ 26 puts its line directly beneath; per-line font 11/10pt.
