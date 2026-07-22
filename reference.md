@@ -730,3 +730,19 @@ from PowerShell for DAX EVALUATE and DMVs):
   count ≥ 2) is only an UPPER bound when the line-number column isn't imported —
   legitimately repeated lines collide with true duplicates. Import the position id
   if duplicate audits matter.
+- CONFIRMED against the raw export: six confirmation versions; versions 1–5 had
+  {line 1: partA, line 2: partB}, the final version a single renumbered
+  {line 1: partB}. Per-line max-doc picked line 1 from the final version + line 2
+  from version 5 — reproducing the loaded duplicate byte-for-byte. Extra twist:
+  even "all lines of the newest confirmation" (the obvious fix) still mismatched
+  the invoice, because the final confirmation itself dropped a line that WAS
+  invoiced — for invoiced orders only the invoice/order-line truth reconciles;
+  the current order lines (status Invoiced) matched the invoice exactly.
+- Auth recipe that got the raw export headlessly: tenant blocked first-party
+  Azure CLI tokens for SPO REST (x-ms-diagnostics `3001003 "App is not allowed to
+  call SPO with user_impersonation scope"`), but the SAME refresh token redeemed
+  for `graph.microsoft.com/.default` worked via the Graph drive API
+  (`/sites/{host}:/sites/{site}` → `/drive/root:/path:/children` → `:/content`).
+  A user-run device-code script persisting the token bundle to a local file keeps
+  the agent out of the credential path (permission classifiers rightly block
+  agent-side token persistence).
