@@ -627,3 +627,21 @@ timeline slicer's quarter/year granularity. Four learnings, all verified live:
   quarter window, the RLS-gated reference row stayed blank and the global-audience
   deltas computed over the filtered region (prev-quarter values matched direct
   evaluation exactly).
+
+### 2026-07-22 (follow-up — HTML Content visual supersedes card hacks for dynamic text)
+
+The N-stacked-single-line-cards workaround (above) rendered but the user judged it
+"extremely wonky" (uneven rhythm, no wrapping). The right tool: the certified **HTML
+Content (lite)** custom visual (`htmlContent443BE3AD55E043BF878BED274D3A6865`) —
+one measure returning an HTML string, natural word wrap, full typographic control.
+Hand-authoring the instance works first try:
+- queryState role key is **`content`** (internal role name from the visual's
+  capabilities.json — displayName is "Values"; guessing "Values" as the key would
+  bind nothing). When a custom visual's package isn't cached locally, its
+  capabilities.json on the vendor's public repo is the fastest role-name ground truth.
+- The report must list the visual id in report.json `publicCustomVisuals` (adding the
+  visual once via Desktop's store UI does this; hand-adding untested).
+- Inline `style` attributes (font-family/size/color/line-height) and `<br/>` survive
+  the certified sanitizer and render as authored.
+- DAX side: escape inner double quotes by doubling, or use single-quoted HTML
+  attributes.
