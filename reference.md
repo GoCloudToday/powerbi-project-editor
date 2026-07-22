@@ -684,3 +684,25 @@ recomputing the delta — one source of truth, invertible per KPI (risk metrics:
 - Stacked dual-audience slot recipe (verified rendering): original row text pulled up
   via its callout padding (24→4), overlay clone keeps identical rect, container
   padding.top ≈ 26 puts its line directly beneath; per-line font 11/10pt.
+
+### 2026-07-22 (round 5 — HTML flex row replaces overlay-card gymnastics for KPI sublines)
+
+User verdict on the stacked two-row card solution: "ugly". Final pattern that won:
+ONE HTML Content (lite) visual per zone rendering "reference-figure · delta" SIDE BY
+SIDE with per-part colors — impossible in native cards (single fontColor per value),
+trivial in HTML spans.
+- KPI row: a full-width visual with `display:flex` and one `flex:1;text-align:center`
+  cell per KPI reproduces the multi-card grid alignment exactly; each cell concatenates
+  a blue reference span and a conditionally-colored delta span (hex measures reused
+  directly in the style attribute). Blank parts vanish via `IF(NOT ISBLANK(...))`
+  concatenation — the same measure serves deltas-only, refs-only, both, or empty.
+- Outer div needs `margin:0;overflow:hidden;line-height:1.2` or the visual grows
+  scrollbars/clips descenders at tight heights; give the visual ~1.6× the font size in
+  height.
+- Originals stay recoverable: `"isHidden": true` (top-level visualContainer property)
+  parks the replaced native cards instead of deleting them.
+- Group-child slot → absolute coords for a replacement visual: group position + child
+  position (groups translate only); verified across two group-nested slots.
+- Blind `sed 's/"Value": "4L"/.../'` on a visual.json hit `columnCount` as collateral
+  (rendered fine only because the visual was hidden) — property values are NOT unique;
+  always anchor Edit on the property name block.
