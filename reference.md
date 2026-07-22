@@ -606,3 +606,24 @@ timeline slicer's quarter/year granularity. Four learnings, all verified live:
   z, measures gated to the complementary audience (`NOT [HasRLS]`), `showBlankAs ' '`,
   same tooltip section — each audience sees exactly one populated layer, hit-testing
   and tooltips stay intact.
+
+### 2026-07-22 (round 2 — new-card text limits, RLS detection vs slicer context)
+
+- **The new card (`cardVisual`) cannot render multi-line text — three failures measured:**
+  (1) a `wordWrap` literal on the `value` object is silently ignored (text clips with
+  an ellipsis); (2) `UNICHAR(10)` in the measure text renders as a SPACE, not a line
+  break; (3) stacking N text measures on one card (`columnCount 1`, generous height,
+  `cellPadding 0`) rendered only the FIRST tile plus a gray overflow pill — tiles 2..N
+  never appeared at any height tried (120→182px for 5 tiles). The reliable pattern for
+  a multi-line dynamic footnote: N separate single-measure cards at ~24px vertical
+  pitch, one short line-measure each (`'Note 1'..'Note N'`, each `IF`-switched on the
+  audience). Bonus: per-line measures also give exact typographic control.
+- **RLS detection by comparing filtered rowcounts conflates slicer filters with RLS.**
+  `COUNTROWS(Dim) <> SUM(TotalDim[Count])` flips TRUE the moment a user slices the
+  region hierarchy, silently switching audience-gated visuals (comparison rows,
+  scope footnotes) into the RLS persona. Fix: evaluate both sides under
+  `CALCULATE(..., REMOVEFILTERS())` — REMOVEFILTERS cannot undo row-level security,
+  so the measure then detects ONLY genuine RLS. Verified: with a region filter +
+  quarter window, the RLS-gated reference row stayed blank and the global-audience
+  deltas computed over the filtered region (prev-quarter values matched direct
+  evaluation exactly).
