@@ -645,3 +645,21 @@ Hand-authoring the instance works first try:
   the certified sanitizer and render as authored.
 - DAX side: escape inner double quotes by doubling, or use single-quoted HTML
   attributes.
+
+### 2026-07-22 (round 3 — "compare with previous period" means LATEST period, not the whole selection)
+
+User: "why is it not changing?" — the deltas were blank on the DEFAULT view. Cause: I
+had implemented previous-period comparison as whole-selected-window vs the equal
+window before it; with the default selection covering the entire data range, the
+prior window is always empty, so the flagship state showed nothing. The mockup showed
+deltas in exactly that state. Correct reading of "Quarter → compare against the
+previous quarter": **latest whole period inside the selection vs the one before it**
+(Q2 vs Q1 even when Q1–Q2 is selected) — headline totals still describe the full
+selection; the small delta describes the latest period. Implementation that keeps it
+maintainable: four hidden date-valued helper measures (Cur Start/End, Prev Start/End)
+hold ALL the alignment logic once; every consumer is one line —
+`CALCULATE([X], DATESBETWEEN('Calendar'[Date], [Prev Start], [Prev End]))` (measure
+refs as DATESBETWEEN bounds are fine). Year-vs-quarter disambiguation when both align:
+year mode only if the selection spans ≥4 quarters. Color measures should derive from
+the display string's arrow character (`LEFT(s,1) = UNICHAR(9650)`) instead of
+recomputing the delta — one source of truth, invertible per KPI (risk metrics: up=red).
