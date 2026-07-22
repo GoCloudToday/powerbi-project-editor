@@ -706,3 +706,27 @@ trivial in HTML spans.
 - Blind `sed 's/"Value": "4L"/.../'` on a visual.json hit `columnCount` as collateral
   (rendered fine only because the visual was hidden) — property values are NOT unique;
   always anchor Edit on the property name block.
+
+### 2026-07-22 (round 6 — "wrong item split" report: visuals hide identical duplicate rows; per-line latest-version dedup mixes document versions)
+
+A business user reported a fact row (one part, qty 200) contradicting the ERP invoice
+(two parts, qty 100 + 100). Two independent traps, both verified against the live
+Desktop cache (when the ADOMD DLL isn't locatable — WindowsApps ACLs —
+`System.Data.OleDb` with `Provider=MSOLAP;Data Source=localhost:<port>` works fine
+from PowerShell for DAX EVALUATE and DMVs):
+- **Visuals aggregate identical rows invisibly.** The loaded table held TWO
+  byte-identical rows (same part, qty 100, same price) — the table visual rendered
+  them as one qty-200 row. EVALUATE the loaded rows for the document key BEFORE
+  reasoning from a screenshot; a "single wrong row" may be N identical rows summed.
+- **Per-(order, line) latest-document-version dedup mixes versions.** The feed kept,
+  per (order id, line number), the row from `List.Max(confirmation document ref)`.
+  If version 1 had lines {1: partA, 2: partB} and the final version has a single
+  renumbered line {1: partB}, the output is partB twice — line 1 from the new version
+  plus line 2 surviving as a ghost of the old version. partA and its revenue vanish
+  silently while totals stay plausible. Dedup at DOCUMENT grain (pick the winning
+  document reference per order, then take all its lines), or source invoiced orders
+  from invoice lines.
+- A fleet audit for the signature (group the loaded fact by doc+part+qty+price,
+  count ≥ 2) is only an UPPER bound when the line-number column isn't imported —
+  legitimately repeated lines collide with true duplicates. Import the position id
+  if duplicate audits matter.
