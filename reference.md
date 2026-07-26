@@ -746,3 +746,58 @@ from PowerShell for DAX EVALUATE and DMVs):
   A user-run device-code script persisting the token bundle to a local file keeps
   the agent out of the credential path (permission classifiers rightly block
   agent-side token persistence).
+
+
+### 2026-07-27 (freezing a retiring SQL landing zone into a one-time Gen1 dataflow)
+
+Task: split frozen historical data out of a live import model into a constant Gen1
+dataflow, authored as an importable `model.json`, with the model re-pointed via
+`PowerPlatform.Dataflows` navigation-only swaps (step names kept; all consumer M
+byte-identical). Three service behaviors, each proven by a verbatim failure:
+
+- **Declared entity attributes are an ENFORCED projection, not documentation.**
+  Refresh failed with `Expression.Error: The column 'X' of the table wasn't found`
+  for a column that existed only in the contract (it was real on a sibling branch,
+  guessed onto this one). The service conforms query output to the attribute list.
+  Never declare a column you cannot prove exists — or make the query self-conforming
+  (below).
+- **Untyped columns break SAVE, not refresh.** `Table.SelectColumns(...,
+  MissingField.UseNull)` yields type-`any` columns for physically-missing names;
+  saving then fails with `DataflowObjectModelTypeNotSupportedException` ("Can't save
+  dataflow"). Every column must end explicitly typed.
+- **Dataflows materialize every column; Desktop does not.** A raw date column whose
+  garbage cells Desktop never evaluates (dropped downstream = lazy skip, plus
+  model-level `returnErrorValuesAsNull`) failed the dataflow refresh with
+  `DataFormat.Error: We couldn't parse the input provided as a Date value`.
+
+Battle-tested snapshot-entity query shape (fixed all three at once, refresh green
+first try afterwards):
+
+1. navigation;
+2. `Table.SelectColumns(Raw, {<declared list>}, MissingField.UseNull)` — a missing
+   physical column becomes a null column, which is exactly what the model's
+   `Table.Combine` union produced for it anyway;
+3. `Table.TransformColumns` with `each try Date.From/Number.From/Int64.From(_,
+   "<model sourceQueryCulture>") otherwise null` + type ascription for every
+   date/number/int64 column (parity with Desktop `returnErrorValuesAsNull`);
+4. `Table.TransformColumnTypes(..., {every remaining column, type text}, <culture>)`.
+
+The attribute array must match the SelectColumns list name-for-name AND
+order-for-order. Export-dialect facts (verified against a working service export):
+`queriesMetadata` is a MAP keyed by query name, `loadEnabled` present only when
+true, `entities[]` = exactly the loadEnabled set, `pbi:QueryGroups` annotation is a
+double-encoded JSON string, entity `pbi:refreshPolicy` = FullRefreshPolicy with
+URL-encoded `<name>.csv` location; OMIT `partitions` and `connectionOverrides` on
+import (service-written). On import the service assigns its own dataflowId — the
+model-side `dataflowId` must be read back from the created dataflow's URL.
+
+Headless Power BI REST verification recipe (worked in a tenant that blocks the
+Azure PowerShell first-party client, AADSTS700016; `/organizations` endpoint gave
+AADSTS50059 — use the tenant-named endpoint): device-code flow with the Azure CLI
+public client id (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`), scope
+`https://analysis.windows.net/powerbi/api/.default`; poll + query in ONE process,
+token in-memory only, never persisted. `GET groups/{ws}/dataflows` lists ids;
+`GET .../dataflows/{id}` returns the LIVE model.json — per-entity `partitions[]`
+presence (with refreshTime) is the materialization proof, and
+`.../dataflows/{id}/transactions` gives refresh status. This turns "did the
+one-time refresh actually complete, per entity?" into a checkable fact.
