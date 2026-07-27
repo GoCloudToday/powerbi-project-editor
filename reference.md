@@ -801,3 +801,31 @@ token in-memory only, never persisted. `GET groups/{ws}/dataflows` lists ids;
 presence (with refreshTime) is the materialization proof, and
 `.../dataflows/{id}/transactions` gives refresh status. This turns "did the
 one-time refresh actually complete, per entity?" into a checkable fact.
+
+### 2026-07-27 (round 2 — cross-entity computation inside a Gen1 dataflow backfires)
+
+Adding a `Table.Group`/join over a LOAD-ENABLED sibling entity inside a Gen1 dataflow
+query turned that sibling into a computed-entity SOURCE. On the next refresh the
+*source* entity — whose own query was untouched and had refreshed green hours
+earlier — failed with `Expression.Error: We cannot convert the value 1 to type
+Text.` The enhanced compute engine evaluates computed-entity sources with SQL-strict
+type semantics; implicit numeric-vs-text coexistence that pure-M evaluation tolerated
+(numeric keys feeding text concatenation/comparison) becomes a hard error, attributed
+to the source entity, not the query you edited.
+
+Rule: when a dataflow entity needs an aggregate of another load-enabled entity,
+prefer computing it in the CONSUMING MODEL's M — the model's entity read has no
+enhanced-compute-engine involvement, and the edit goes through the model's own
+verification pipeline. Reverting the dataflow query and moving the identical
+join/group/compute into the model's shared expression fixed it first try (validated
+per-row against the live Desktop engine via `System.Data.OleDb` + `Provider=MSOLAP`:
+computed amount = pct x grouped base, exact to the cent).
+
+Related trap from the same investigation: an ERP exports charges with BOTH a
+fixed-amount and a percentage column; percentage-configured charges carry 0 in the
+fixed column. A feed that maps "value" from the fixed column silently zeroes every
+percentage charge — while a sibling fixed-type charge from the same file flows fine,
+which is the diagnostic signature (one charge type present, the other absent, same
+join). Also: two charge rows per document expanded through a NestedJoin then deduped
+by `Table.Distinct` on the document key drop one charge at random — collapse charge
+tables to one row per document BEFORE joining headers.
