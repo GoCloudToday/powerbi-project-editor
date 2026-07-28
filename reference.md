@@ -857,3 +857,25 @@ with the store-app Desktop's own DLLs (WindowsApps ACL denies Add-Type; copied o
 `Server.Tabular` loads but `GetTypes` dies on missing deps) — for store installs,
 either keep a NuGet TOM handy or accept Desktop's next open as the validator: this
 dialog names the offending object precisely, so the loop is tight.
+
+### 2026-07-28 (excludeFromModelRefresh via TMDL edit drops the table's data)
+
+Adding `excludeFromModelRefresh` to three small frozen dimension tables by editing
+their TMDL (property line under `table X`, validated by TOM round-trip) looked like a
+pure-metadata change — Rule 1 says only M text invalidates. WRONG for this property:
+on next open, Desktop treated it as structural and dropped those tables' data, and
+because the tables are now excluded from the global refresh, a full refresh never
+reloads them — they sit EMPTY (COUNTROWS blank) while every other table is fine.
+Knock-on: DAX calc columns on OTHER tables that RELATED() into them recalculated
+against the empty table and went blank, silently poisoning a baseline export taken in
+that session.
+
+Rules:
+- `excludeFromModelRefresh` belongs to the cache-invalidating class for practical
+  purposes: apply it WITH a follow-up load plan.
+- The recovery/intended workflow: per-table right-click "Refresh data" in Desktop
+  still processes an excluded table (exclusion only gates the global refresh). One
+  manual per-table refresh restores the data; the exclusion then keeps it constant.
+- After any excludeFromModelRefresh edit, verify with COUNTROWS on the excluded
+  tables AND on calc columns that reference them before trusting any engine export
+  from that session.
