@@ -829,3 +829,31 @@ which is the diagnostic signature (one charge type present, the other absent, sa
 join). Also: two charge rows per document expanded through a NestedJoin then deduped
 by `Table.Distinct` on the document key drop one charge at random — collapse charge
 tables to one row per document BEFORE joining headers.
+
+### 2026-07-28 (a `queryGroup:` reference needs a queryGroup OBJECT in model.tmdl)
+
+Repeating the historical-dataflow swap on a second report's model: added an
+expressions.tmdl whose shared expression carried `queryGroup: Historical` — copying
+the DONOR model's expression block but not noticing the donor also declares, in
+model.tmdl right after the model header:
+
+```text
+queryGroup Historical
+
+	annotation PBI_QueryGroupOrder = 8
+```
+
+Desktop refused to open the project: "Cannot resolve all the paths while
+de-serializing Database. Resolution Errors: Property QueryGroup of object
+"expression HistoricalSource" refers to an object which cannot be found." The trap
+compounds because a grep for the `PBI_QueryGroups` ANNOTATION (the dataflow-JSON
+spelling) finds nothing in any model.tmdl and wrongly "proves" no declaration is
+needed — TMDL declares groups as bare `queryGroup <name>` objects (quoted when the
+name has spaces, `A\B` for nesting), each with a `PBI_QueryGroupOrder` annotation.
+Rule: when hand-adding any table/expression that carries `queryGroup:`, declare the
+group object in model.tmdl first (order number unique among that model's groups; `0`
+fine for a model's first group). Offline TOM validation of the fix was NOT possible
+with the store-app Desktop's own DLLs (WindowsApps ACL denies Add-Type; copied out,
+`Server.Tabular` loads but `GetTypes` dies on missing deps) — for store installs,
+either keep a NuGet TOM handy or accept Desktop's next open as the validator: this
+dialog names the offending object precisely, so the loop is tight.
