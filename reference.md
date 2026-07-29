@@ -879,3 +879,31 @@ Rules:
 - After any excludeFromModelRefresh edit, verify with COUNTROWS on the excluded
   tables AND on calc columns that reference them before trusting any engine export
   from that session.
+
+### 2026-07-28 (round 2 — precomputing frozen fact slices as dataflow entities; the CSV null->"" join bomb)
+
+Moved the frozen slice of two fact tables (headers + positions, ~190k/~520k rows,
+full processing incl. FX sort/FillUp and margin columns) into two SELF-CONTAINED
+one-time dataflow entities; the model now processes only the live-ERP slice per
+refresh and combines with entity reads. Acceptance = keyed per-row diff on headers,
+per-branch aggregate fingerprints on positions, both against a pre-swap engine
+export. Worked — with one landmine:
+
+- **Gen1 CSV round-trips turn TEXT nulls into empty strings.** A LeftOuter-join
+  column that was null in-memory comes back from the entity as "". A model-side
+  NestedJoin keyed on that column then MATCHES map rows whose key is also ""
+  (e.g. synthetic/code-less products) — every unmatched row multiplied by the count
+  of empty-key map rows (observed 5x on ~21k rows; branch row count 36k -> 89k,
+  margin sums shifted). The old all-in-memory path never matched because genuine
+  nulls join nothing. Fix pattern (both halves): `Table.ReplaceValue(entityRead,
+  "", null, ...)` on join-key columns AND filter the lookup map to non-empty keys.
+  Corollary: after ANY table moves through a dataflow, audit every downstream join
+  keyed on a column that can be null — "" is the new null, and "" DOES join.
+- Acceptance methodology when a multiset string-diff is defeated by column
+  reordering (calc-column conversion) and float re-formatting: per-BRANCH aggregate
+  fingerprints over every value column (sums to ~1e-13 relative) + exact row counts
+  + keyed per-row diff where a key exists. A branch-sliced fingerprint catches a
+  wrong-branch regression that a table-total fingerprint hides.
+- Splitting a union also splits dedup/fill scopes: prove cross-branch key collisions
+  impossible (ID shape rule + measured zero overlap) before splitting Table.Distinct;
+  document FillUp fill-space changes and probe null-counts before/after.
