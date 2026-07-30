@@ -962,3 +962,21 @@ What was measured to work vs not:
 - The one-time "Bing maps are going away" dialog blocks page navigation clicks until
   dismissed via its UIA button named **"Close Dialog"** (the WinForms `#32770`-style
   finders don't see it).
+
+### 2026-07-23 (page-4 trend suite — programmatic visual generation)
+
+- **Authoring several similar PBIR visuals: build nested hashtables and
+  `ConvertTo-Json -Depth 60` from a parametrized PowerShell function** instead of
+  hand-writing JSON — five line charts (varying category, optional Series role,
+  1–2 measures, per-chart filters) generated and loaded first try. The one trap:
+  a Values list-of-lists in an `In` filter needs the unary-comma wrapper
+  (`@(,@(@{Literal=...}))`) or ConvertTo-Json flattens it.
+- lineChart accepts TWO measures in role `Y` for a two-line chart (score + rate)
+  when a Series legend isn't used; Series (legend) and multiple Y measures remain
+  mutually exclusive — for "per-period series AND a rate line" asks, pick per widget.
+- `sortByColumn:` added by hand to a TMDL column (pointing at an existing
+  order column) is honored everywhere after reopen — charts and slicers pick up the
+  business ordering with no report-side changes.
+- Category axes over relationship-blank members: the blank shows as a "(Blank)"
+  axis category; a hidden visual-level Advanced `Not(= null)` filter on the axis
+  column removes it (same shape as the not-blank date filter).
