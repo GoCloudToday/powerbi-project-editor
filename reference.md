@@ -932,3 +932,33 @@ reusable findings:
   also FIXED bugs (e.g. price-quantity inflation), amount deltas mix corrections
   with regressions — verify candidate orders against an independent truth
   (posted-invoice totals) before calling them losses.
+### 2026-07-23 (Bing filledMap → azureMap conversion, hand-finished; choropleth recipe)
+
+Deprecated `filledMap` (Bing) replaced with native `azureMap` on a hand-built page.
+What was measured to work vs not:
+- **Desktop's "Upgrade map" banner button is the right converter** (it authors valid
+  azureMap JSON) — but the banner lives in the visual's WebView, invisible to UIA;
+  click it by pixel coordinates. The conversion carries `dataPoint.fill` over.
+- **Role trap: azureMap interprets query role `Y` as LATITUDE.** The Bing filled map's
+  Y (size/tooltip measure) survives conversion and silently feeds a count as a
+  coordinate — geocoding breaks, every region renders in the default theme fill, and
+  the map world-tiles. Fix: DELETE the Y projection; a country/ISO2 column in
+  `Category` (Location) alone geocodes regions.
+- Restrict the query with a hidden visual filter `measure > 0` — without any measure
+  in the query, ALL dimension rows geocode and no-data countries paint the default
+  fill.
+- **Conditional region color = `dataPoint.fill` with a measure + dataViewWildcard
+  selector** (same shape as Bing). A guessed `filledMap.fillColor` entry was silently
+  stripped by Desktop's next save — invalid property, no error (Rule 8 behavior).
+- Working `mapControls` properties (Desktop-serialized, verified): `defaultStyle`
+  (`'grayscale_light'` gives the clean mockup-style base), `zoom`/`centerLatitude`/
+  `centerLongitude` (D literals), **`worldWrap: false`** to stop horizontal world
+  repetition, `showStylePicker`/`showNavigationControls`/`showSelectionControl`.
+  `filledMap.show true` + `bubbleLayer.show false` for pure choropleth;
+  `mapTransparency 40L` (conversion default) washes colors — set `0L`.
+- The Format pane IS UIA-automatable for unknown properties: card headers are UIA
+  BUTTONs ("Map settings"), toggles clickable; flip the setting in UI, Ctrl+S, and
+  diff the visual.json to learn the serialization (that's how `worldWrap` was found).
+- The one-time "Bing maps are going away" dialog blocks page navigation clicks until
+  dismissed via its UIA button named **"Close Dialog"** (the WinForms `#32770`-style
+  finders don't see it).
