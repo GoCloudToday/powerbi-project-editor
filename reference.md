@@ -907,3 +907,28 @@ export. Worked — with one landmine:
 - Splitting a union also splits dedup/fill scopes: prove cross-branch key collisions
   impossible (ID shape rule + measured zero overlap) before splitting Table.Distinct;
   document FillUp fill-space changes and probe null-counts before/after.
+### 2026-07-29 (column name with a trailing space; A/B against an old PBIX snapshot in a second Desktop instance)
+
+Investigating "value missing in PBI" reports against a live Desktop model, two
+reusable findings:
+- **A TMDL/TMSCHEMA column name can end in a trailing SPACE** (`[Some_Column ]`).
+  `$SYSTEM.TMSCHEMA_COLUMNS` output formats it invisibly, and DAX referencing
+  `[Some_Column]` (no space) fails with the misleading "Column ... cannot be found
+  or may not be used in this expression" even though the DMV "shows" it and
+  State=1. Audit by dumping `.Length`/char codes of ExplicitName, then reference
+  the bracket name WITH the space. DAX *value* comparison is trailing-space
+  insensitive, but *object name* resolution is exact.
+- **Old-PBIX A/B is the fastest missing-data triage when the feed reworked
+  recently.** A stale .pbix snapshot (saved before the feed rework) opens in a
+  SECOND Desktop instance alongside the user's live session (new msmdsrv port —
+  poll `Get-NetTCPConnection` excluding the known port, then poll DBSCHEMA_CATALOGS
+  until the catalog answers; a ~120MB pbix needs minutes). Querying the same keys
+  in both models instantly separates "regression introduced by the rework" (rows
+  present in old, gone in new) from "was always missing" (absent in both) — no
+  source credentials needed, because the old cache IS the old feed's output.
+  Kill only the second instance afterwards: resolve the new port's msmdsrv PID →
+  its PARENT PBIDesktop PID → Stop-Process that parent; the user's session and
+  its port stay untouched. Fleet-wide old-vs-new diffs need care: if the rework
+  also FIXED bugs (e.g. price-quantity inflation), amount deltas mix corrections
+  with regressions — verify candidate orders against an independent truth
+  (posted-invoice totals) before calling them losses.
