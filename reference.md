@@ -980,3 +980,19 @@ What was measured to work vs not:
 - Category axes over relationship-blank members: the blank shows as a "(Blank)"
   axis category; a hidden visual-level Advanced `Not(= null)` filter on the axis
   column removes it (same shape as the not-blank date filter).
+
+### 2026-07-23 (syncing the embedded theme to the org template breaks slot-riding semantic colors)
+
+The report's RegisteredResources theme copy had drifted from the org's source-of-truth
+theme JSON (two palette slots: dark greys where the template has greens). Syncing the
+embedded file to the template (overwrite content, keep the registered filename;
+strip the template's BOM) is the right move — but any visual whose SEMANTIC series
+colors ride theme slot order flips with it: the sentiment-category charts' "negative"
+series went GREEN. Fix pattern: pin category colors explicitly on affected visuals —
+`dataPoint` entries with `selector.metadata = "<Table>.<Measure>"` for per-measure
+series, and `selector.data[].scopeId.Comparison` (column = 'Value') for legend-column
+series. Both shapes verified rendering; the scopeId shape matches what Desktop itself
+serializes. Appending to an existing Desktop-authored `dataPoint` array via
+ConvertFrom/To-Json round-trip (-Depth 100) preserved fieldParameters and stale
+entries intact. Rule: semantic (good/bad) series must NEVER depend on theme slot
+order — pin them at the visual.
