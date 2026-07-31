@@ -1046,3 +1046,34 @@ lines as status Invoiced):
   (status filter, rounding collision) predicted the same symptom; only the raw
   row distinguished them. A user screenshot showing header status cannot —
   headers and lines both said Invoiced.
+
+### 2026-07-31 (bridging order-level values to position grain; "history is empty" triage order)
+
+Request: an order-level income stream (charges in the new ERP, a dedicated fee
+ARTICLE on invoice lines in the legacy ERP) had to become sliceable by product
+dims and continuous across both eras. Learnings:
+- **"No history" for a metric usually means the legacy era booked it
+  DIFFERENTLY, not that data is missing.** Before declaring a gap, sweep the
+  legacy position lines for fee/service articles (grep part names for the fee
+  concept in every business language of the tenant, then rank candidates by
+  yearly sums — the real fee article stands out by orders of magnitude).
+  Legacy-era "charge" concepts often live as line items on a synthetic article.
+- **Allocate order-level values to lines with TIERED fallbacks that preserve
+  exact parity**, not a single rule: (1) pro-rata over positive non-fee lines;
+  (2) else fee lines keep their own value and absorb charges proportionally;
+  (3) else allocate by absolute line value, last resort equal split by a row
+  count carried on the header. Acceptance = SUM(allocated) vs SUM(sources) to
+  the cent, then DECOMPOSE the residual (ours: exactly the orders with charges
+  but zero loaded position rows — quantify, don't hand-wave).
+- **Expect a large legitimately-unallocatable share.** Over half the legacy fee
+  volume sat on fee-ONLY documents (separate freight invoices with no product
+  lines) — no bridge can conjure product dims for those; they still slice by
+  header dims (customer/subsidiary). Report that share explicitly or the
+  product-dim view will be mistaken for a bug.
+- Implementation notes that made it cheap: hoist per-order aggregates to calc
+  columns on the HEADER (context transition over the related fact — O(n)), the
+  line column reads them via RELATED; use the model's CANONICAL value column
+  (the consolidated/FX-fallback one the Sales measures use), not the raw one;
+  calc columns recalc from loaded data — no source refresh needed.
+- DMV caveats hit again: TMSCHEMA DMVs reject LIKE and subqueries; read values
+  via GetValue with DBNull checks (GetString throws on null ExplicitName rows).
