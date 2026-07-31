@@ -996,3 +996,27 @@ serializes. Appending to an existing Desktop-authored `dataPoint` array via
 ConvertFrom/To-Json round-trip (-Depth 100) preserved fieldParameters and stale
 entries intact. Rule: semantic (good/bad) series must NEVER depend on theme slot
 order — pin them at the visual.
+
+### 2026-07-31 (ThemeDataColor ColorId mapping; theme swaps recolor custom visuals silently)
+
+`ThemeDataColor` in visual.json maps as: ColorId 0 = theme `background`, ColorId 1 =
+theme `foreground`, ColorId N (N>=2) = `dataColors[N-2]`. Verified by matching a
+custom-visual (Tachometer) gauge's rendered colors against the theme file: its axis
+labels used ColorId 8 → dataColors[6], pointer ColorId 9 → dataColors[7], hub
+ColorId 7 → dataColors[5]. Consequence of the theme-sync rule above extends to
+CUSTOM visuals too: after swapping the embedded theme, any Desktop-authored
+ThemeDataColor reference (even in third-party visuals) silently changes hue — here
+gray axis labels turned light green because the new palette put a green in slot 6.
+Fix: replace the `ThemeDataColor` expr with a `Literal` hex (structure:
+`"expr": {"Literal": {"Value": "'#RRGGBB'"}}`) wherever the color is semantic or
+neutral-by-design. Audit trick: grep edited pages for `ThemeDataColor` after any
+theme sync and eyeball each slot against the new palette.
+
+### 2026-07-31 (Desktop-authored manual layout edits: fractional positions are the tell)
+
+When the user hand-resizes visuals in Desktop and saves, positions serialize as long
+fractionals (e.g. `403.64741641337389`) vs. programmatic integers — a reliable way to
+detect which visuals the user touched before redistributing a layout around their
+edits. Redistribute AROUND those visuals (treat them as fixed), and remember inner
+`columnWidth` selectors do NOT scale with the container — a user-widened table keeps
+its old column widths unless they resized columns too (also fractional if they did).
