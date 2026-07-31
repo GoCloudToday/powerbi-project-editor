@@ -1020,3 +1020,29 @@ detect which visuals the user touched before redistributing a layout around thei
 edits. Redistribute AROUND those visuals (treat them as fixed), and remember inner
 `columnWidth` selectors do NOT scale with the container — a user-widened table keeps
 its old column widths unless they resized columns too (also fractional if they did).
+
+### 2026-07-30 (Int64-typing a line-number column BANKER'S-ROUNDS fractional lines into collisions; Distinct then eats invoiced rows)
+
+Follow-up to the 2026-07-29 missing-items triage — the confirmed root cause was
+NOT the canceled-line filter (my first hypothesis; raw export showed the missing
+lines as status Invoiced):
+- **M's number→Int64 TransformColumnTypes ROUNDS (round-half-to-even), it does
+  not error.** ERP line numbers are decimals — inserted lines get 8.5, 3.75,
+  3.875. Typing that column Int64 folds 8.5→8, 13.5→14, 3.75→4 silently onto
+  neighboring integer lines; a downstream `Table.Distinct(_, {order, line})`
+  then keeps one arbitrary row per collision and real invoiced lines vanish
+  with plausible totals. (Text→Int64 errors; number→Int64 rounds — the danger
+  path is the numeric one, e.g. Excel-sourced columns.)
+- Measured on one company's export: 15,348 active lines → 120 rows in collision
+  groups → 62 rows silently dropped (57 of them Invoiced) across 52 orders,
+  ~103k in transaction currency.
+- Rule: NEVER type a line/position number Int64. Type it `type number` (or
+  text preserving the fraction) and keep the typing IDENTICAL on every query
+  that joins or dedups on it (anti-join sets, mapping tables, tax-allocation
+  groupings) so keys round-trip byte-identically.
+- Triage rule derived: when specific child rows are missing, fetch the RAW
+  export row for the missing keys FIRST and read the actual status/key values
+  before theorizing from the transform code — two plausible mechanisms
+  (status filter, rounding collision) predicted the same symptom; only the raw
+  row distinguished them. A user screenshot showing header status cannot —
+  headers and lines both said Invoiced.
