@@ -1077,3 +1077,28 @@ dims and continuous across both eras. Learnings:
   calc columns recalc from loaded data — no source refresh needed.
 - DMV caveats hit again: TMSCHEMA DMVs reject LIKE and subqueries; read values
   via GetValue with DBNull checks (GetString throws on null ExplicitName rows).
+
+### 2026-08-03 (summary count ≠ detail row count on the same page: diff visualInteractions FIRST)
+
+A data-quality page showed an error-category count of 10 contracts while the
+detail table below listed only 6 rows for the same category/country. Neither
+visual's filterConfig explained it (the hidden per-visual filters differed but
+were no-ops — they sat on a many-side table with no propagation path to the
+counted table). The cause lived in `page.json` → `visualInteractions`: a
+numeric-range slicer (revenue ≥ threshold) had `NoFilter` overrides toward two
+of the three summary tables but NO entry toward the detail table, so the
+default (DataFilter) applied only there. Engine A/B confirmed:
+`CALCULATE(COUNT(...), cat, country)` = 10; adding
+`KEEPFILTERS(rank[revenue] >= threshold)` = 6.
+
+Rules:
+- When two visuals on ONE page disagree on the same slice, diff
+  `page.json.visualInteractions` before diffing visual filters. Entries are
+  `{source, target, type}` with type `NoFilter`/`DataFilter`/`HighlightFilter`;
+  an ABSENT pair means default (filter/highlight applies). Asymmetric overrides
+  (some summary visuals exempted, siblings not) are invisible in the filter pane.
+- Per-visual hidden filters on a many-side table (e.g. `Contract[Account ID]`
+  with single-direction Contract→Account) cannot filter other fact tables —
+  rule them out by walking the relationship graph before blaming them.
+- Verify with an engine A/B (`CALCULATE` vs `CALCULATE`+`KEEPFILTERS(slicer
+  predicate)`) — it reproduces both numbers exactly and names the dropped rows.
