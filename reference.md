@@ -1102,3 +1102,45 @@ Rules:
   rule them out by walking the relationship graph before blaming them.
 - Verify with an engine A/B (`CALCULATE` vs `CALCULATE`+`KEEPFILTERS(slicer
   predicate)`) — it reproduces both numbers exactly and names the dropped rows.
+
+### 2026-08-03 round 2 (making a range slicer apply per-category: disconnected clone + TREATAS, verified by A/B)
+
+Follow-up to the visualInteractions finding: the requirement became "the revenue
+slicer must filter SOME issue categories (and their detail rows) but not others,
+with counts and detail always agreeing." Interaction overrides can't do this —
+they are per-visual, and a NoFilter override also blinds the visual's measures
+to the slicer selection (SELECTEDVALUE/ISFILTERED see nothing). Working recipe:
+
+1. **Disconnected clone table** of the sliced column:
+   `SELECTCOLUMNS(ALLNOBLANKROW('rank'[revenue]), "revenue", 'rank'[revenue])`
+   (ALLNOBLANKROW per the calc-table blank-row-circularity rule). Rebind the
+   slicer to it — TWO attachment points in the slicer visual.json: the
+   projection AND the stored selection in `objects.general.filter.filter.From`
+   (a numeric-range slicer keeps its typed bound there + `objects.data.numericStart`).
+2. **Category flag** as an int (0/1) calc column on the fact — booleans break
+   MAX(); ints filter cleanly in CALCULATE.
+3. **Counts** = unflagged part + flagged part, the flagged part under
+   `KEEPFILTERS(TREATAS(VALUES(clone[revenue]), rank[revenue]))` when
+   `ISFILTERED(clone[revenue])` — TREATAS re-enters the original table so
+   relationship propagation replicates the connected slicer EXACTLY (incl.
+   bidi paths to sibling denominators).
+4. **Detail-table row gating** = hidden `Pass` measure (1/0) + visual-level
+   Advanced filter `= 1`; the pass test is
+   `CALCULATE(COUNTROWS(fact), KEEPFILTERS(TREATAS(...))) > 0` per row —
+   reuses propagation, no LOOKUPVALUE blank-key traps.
+5. Swapping a visual's `CountNonNull(...)` aggregation for the new measure
+   touches projections, sortDefinition, conditional-formatting expressions
+   (RangePercent inner nodes), columnWidth/dataBars selectors, AND any
+   aggregation-field visual filter. A JSON round-trip walker (PowerShell
+   ConvertFrom/ConvertTo-Json -Depth 100) replacing the exact Aggregation
+   subtree + a plain string replace of the queryRef selector strings handled
+   all of them; Desktop accepted the re-serialized visual.json.
+6. **Acceptance** = engine A/B in the NEW model: old behavior emulated with
+   `KEEPFILTERS(rank[revenue] >= x)` vs new measures under a clone-table
+   filter — every pair must match (counts, detail pass-sums, ratios,
+   denominators), plus the no-selection state (ISFILTERED false ⇒ all three
+   representations equal the unfiltered count).
+
+Also: a headless `Start-Process <pbip>` open validated the hand-authored calc
+table + measures (poll for the NEW table name, then TMSCHEMA_PARTITIONS all
+State=1).
