@@ -1144,3 +1144,44 @@ to the slicer selection (SELECTEDVALUE/ISFILTERED see nothing). Working recipe:
 Also: a headless `Start-Process <pbip>` open validated the hand-authored calc
 table + measures (poll for the NEW table name, then TMSCHEMA_PARTITIONS all
 State=1).
+
+### 2026-08-04 (scaffolding a complete PBIP from scratch — accepted by Desktop on first open)
+
+Built a whole project (DirectQuery model over a cloud SQL source + report) by
+hand, no Desktop involved, for a writeback demo. Desktop opened it clean,
+signed in, and saved without complaints. What made it work:
+
+- **Template every metadata part from a sibling Desktop-authored project** —
+  don't guess versions. The combination that worked together: `.pbip` 1.0,
+  `definition.pbism` 4.2, report `definitionProperties` 4.0 (byPath), report
+  `versionMetadata` 2.0.0, `report.json` schema 3.3.0, `page` 2.1.0,
+  `visualContainer` 2.11.0, `database.tmdl` compatibilityLevel 1606. A minimal
+  `model.tmdl` (culture, defaultPowerBIDataSourceVersion powerBI_V3,
+  dataAccessOptions, PBI_QueryOrder, `ref table` lines) suffices.
+- **report.json must carry the theme plumbing or Desktop has nothing to
+  render with**: `themeCollection.baseTheme` (SharedResources) + the matching
+  `resourcePackages` entry + the BaseThemes JSON copied into
+  `StaticResources/SharedResources/BaseThemes/`. A custom theme carried over
+  from the sibling project worked with RegisteredResources item type
+  `CustomTheme` (the sibling's Desktop-written file said `Image` — Desktop
+  accepts both, so don't cargo-cult the odd one).
+- **Hand-authorable visual set (verified rendering)**: slicer (objects.data
+  mode 'Dropdown' + selection.singleSelect), card (single measure projection),
+  tableEx (column projections + sortDefinition), textbox
+  (objects.general.paragraphs[].textRuns[] with textStyle). LF line endings
+  everywhere were accepted.
+- **Desktop normalizes on first save** — fenced ```` ``` ```` M partition
+  sources become plain indented `source =`, slicer projections gain
+  `"active": true`, `PBI_ProTooling` annotation appears. Diff AFTER the first
+  Desktop save before doing further hand edits, or your next old_string match
+  fails.
+- **Offline TMDL gate without a modern SSMS**: check for the TYPE, not the DLL
+  version — an SSMS 20 `Microsoft.AnalysisServices.Tabular.dll` lacked
+  `TmdlSerializer` while ALM Toolkit's build (FileVersion 17.0.39.18) had it.
+  `[TmdlSerializer]::DeserializeDatabaseFromFolder($definitionFolder)` is the
+  gate; it validated 2 tables / 1 relationship / 5 measures before Desktop
+  ever saw the project.
+- **PS 5.1 validator trap on non-ASCII paths**: a `.ps1` saved as UTF-8
+  *without* BOM gets its path literals mangled by Windows PowerShell
+  (`á` → `Ã¡`, "Invalid path ... does not exists"). Save harness scripts with
+  `-Encoding utf8BOM` when user profiles contain accented characters.
