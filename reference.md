@@ -1186,23 +1186,70 @@ signed in, and saved without complaints. What made it work:
   (`á` → `Ã¡`, "Invalid path ... does not exists"). Save harness scripts with
   `-Encoding utf8BOM` when user profiles contain accented characters.
 
-### 2026-08-04 round 2 (translytical visuals ARE hand-authorable — except the binding, which PBIR cannot store)
+### 2026-08-04 round 2 (translytical visuals ARE hand-authorable; binding claim CORRECTED in round 3)
 
 Screenshot-verified in Desktop after a reopen of the scaffolded project:
 
 - **Input slicer visualType is `textSlicer`** — hand-authored with NO query
   projections (that's what makes it a pure input box instead of a filter) plus
   a `visualContainerObjects.title`. It rendered and accepted typed input
-  first try.
+  first try. (Desktop's save normalizes it by adding an empty
+  `objects.general` card.)
 - **A data-function button** = `actionButton` with
-  `visualContainerObjects.visualLink` `{show: true, type: 'DataFunction'}`
-  and nothing else. Desktop renders it with tooltip "The data function is not
-  properly configured" — the EXPECTED unbound state, because **PBIR does not
-  persist the function reference or parameter bindings** (the `parameters`
-  array serializes empty by design; even Desktop round-trips lose the
-  mapping). The one-time bind in Desktop's Format > Action pane is
-  architecturally unavoidable — say so up front instead of promising a
-  fully-wired file.
-- Corollary for clone/rebind tooling: a report copy carrying data-function
-  buttons arrives with all bindings SILENTLY reset — budget a manual re-bind
-  pass per button after any programmatic report clone.
+  `visualContainerObjects.visualLink` `{show: true, type: 'DataFunction'}`.
+  With no `dataFunction` node it renders with tooltip "The data function is
+  not properly configured" — the unbound state. I initially recorded (from a
+  third-party writeup) that PBIR cannot persist the binding at all. **That is
+  WRONG for current Desktop — see round 3**, which documents the full
+  serialized binding.
+
+### 2026-08-04 round 3 (Desktop DOES serialize the full data-function binding — verified shape, end-to-end write confirmed)
+
+After binding the button in Desktop's Format > Action pane and saving, the
+visual.json carried the COMPLETE binding — so a fully-wired translytical
+button is hand-authorable after all (the round-2 "unavoidable manual bind"
+claim was based on an outdated external writeup; trust the round-trip, not
+the blog). Verified end to end: button press inserted the row via the UDF.
+
+Serialized shape under `visualContainerObjects.visualLink` (alongside `show`
+and `type: 'DataFunction'`) — note `dataFunction` is a STRUCTURED node, not
+an `{expr}` formatting property:
+
+```json
+"dataFunction": {
+  "kind": "ItemLocation",
+  "byReference": {
+    "itemId":      { "expr": { "Literal": { "Value": "'<udf-item-guid>'" } } },
+    "workspaceId": { "expr": { "Literal": { "Value": "'<workspace-guid>'" } } }
+  },
+  "metadata": { "dataFunction": {
+    "name": "<function_name>",
+    "autoRefresh": true,
+    "parameters": [
+      { "name": "p1", "dataType": "string", "isOptional": false, "defaultValue": null,
+        "type": "ValueParameter",
+        "value": { "expr": { "Aggregation": { "Expression": { "Column": { "Expression": { "SourceRef": { "Entity": "<dim>" } }, "Property": "<col>" } }, "Function": 3 } } } },
+      { "name": "p2", "dataType": "number", "isOptional": false, "defaultValue": null,
+        "type": "SlicerParameter", "slicer": "<input-slicer visual name>", "autoClear": false },
+      { "name": "p3", "dataType": "string", "isOptional": false, "defaultValue": null,
+        "type": "ValueParameter",
+        "value": { "expr": { "Measure": { "Expression": { "SourceRef": { "Entity": "<table>" } }, "Property": "<measure>" } } } }
+    ]
+  } }
+}
+```
+
+Rules derived:
+- Column-bound scalar parameters get wrapped by Desktop in an `Aggregation`
+  with `Function: 3` (Min) — mirror that when hand-authoring, don't pass the
+  bare Column node.
+- `SlicerParameter` references the input slicer by its VISUAL NAME (the
+  folder-name id) — a hand-authored `textSlicer` participates fine; keep the
+  name stable or the binding dangles silently.
+- `byReference.itemId`/`workspaceId` are ENVIRONMENT-BOUND literals — a
+  report promoted to another workspace/tenant keeps pointing at the original
+  UDF item. Deployment across environments must rewrite these two literals
+  (or re-bind in Desktop); nothing errors at load time.
+- The measure-bound parameter (e.g. USERPRINCIPALNAME() for audit columns)
+  evaluates per-viewer at press time — in Desktop it records the author's
+  sign-in identity, in the service each viewer's own UPN.
