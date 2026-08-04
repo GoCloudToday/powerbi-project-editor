@@ -1185,3 +1185,24 @@ signed in, and saved without complaints. What made it work:
   *without* BOM gets its path literals mangled by Windows PowerShell
   (`á` → `Ã¡`, "Invalid path ... does not exists"). Save harness scripts with
   `-Encoding utf8BOM` when user profiles contain accented characters.
+
+### 2026-08-04 round 2 (translytical visuals ARE hand-authorable — except the binding, which PBIR cannot store)
+
+Screenshot-verified in Desktop after a reopen of the scaffolded project:
+
+- **Input slicer visualType is `textSlicer`** — hand-authored with NO query
+  projections (that's what makes it a pure input box instead of a filter) plus
+  a `visualContainerObjects.title`. It rendered and accepted typed input
+  first try.
+- **A data-function button** = `actionButton` with
+  `visualContainerObjects.visualLink` `{show: true, type: 'DataFunction'}`
+  and nothing else. Desktop renders it with tooltip "The data function is not
+  properly configured" — the EXPECTED unbound state, because **PBIR does not
+  persist the function reference or parameter bindings** (the `parameters`
+  array serializes empty by design; even Desktop round-trips lose the
+  mapping). The one-time bind in Desktop's Format > Action pane is
+  architecturally unavoidable — say so up front instead of promising a
+  fully-wired file.
+- Corollary for clone/rebind tooling: a report copy carrying data-function
+  buttons arrives with all bindings SILENTLY reset — budget a manual re-bind
+  pass per button after any programmatic report clone.
