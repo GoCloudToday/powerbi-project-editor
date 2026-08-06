@@ -1253,3 +1253,21 @@ Rules derived:
 - The measure-bound parameter (e.g. USERPRINCIPALNAME() for audit columns)
   evaluates per-viewer at press time — in Desktop it records the author's
   sign-in identity, in the service each viewer's own UPN.
+
+### 2026-08-07 (two traps: DirectQuery DIVIDE alternate-result, and actionButton label card anatomy)
+
+- **DirectQuery models reject `DIVIDE(a, b, alternate)` with a non-constant
+  alternate** at query time: "The alternate result to return on divide by zero
+  cases must be a constant numeric value." A measure using
+  `DIVIDE(x, rate, x)` (fallback-to-unconverted) errors on every visual. Use
+  two-arg `DIVIDE` + `IF(ISBLANK(...))` for variable fallbacks.
+- **actionButton label**: the `objects.text` card must contain TWO entries —
+  a card-level `{properties: {show: true}}` WITHOUT a selector, then the
+  `text`/`fontSize`/`fontColor` properties under `selector: {id: "default"}`.
+  Collapsing them into one selector-default entry renders NO label (silently).
+  Same split applies to `fill` (card-level `show`, then `fillColor` under the
+  state selector). An `icon.shapeType = 'blank'` entry gives a clean
+  text-only button.
+- Binding-metadata `defaultValue` on a `SlicerParameter` PRE-FILLS the bound
+  input slicer with that value in the service — use `null` there even when
+  the function's own default is a numeric sentinel.
