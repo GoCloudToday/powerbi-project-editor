@@ -1287,3 +1287,23 @@ Also verified: slicer `objects.header.show=false` removes the redundant
 field-name chrome under a VCO title; a `shape` visual panel = objects
 `shape.shapeType 'rectangle'` + two-entry fill/outline cards (selector
 default + card-level show), same split as buttons.
+
+### 2026-08-07 round 3 (input slicer `textSlicer` formatting card names — captured from a Desktop save)
+
+Formatted ONE input slicer in Desktop's Format pane, saved, and diffed the
+visual.json — the discovery pattern of choice when object/property names are
+undocumented (public schemas leave visual objects untyped). Cards written:
+
+- `applyButton`: `iconSize` (`0D` hides the submit arrow — the documented
+  "Icon size = 0" trick), `spacing`, `paddingLeft/Right` (`0L`).
+- `slicerSettings`: `numericInputOnly` (`true`) — free input validation for
+  numeric-only task-flow inputs.
+- `inputText` (the committed-value pill): `backShow false` kills the pill's
+  highlight background, `dismissSize 0D` hides the pill's X, plus paddings.
+- `filterOperator`: `backShow`.
+- `inputTextBox`: `paddingLeft/Right` (`4L`).
+
+Propagation recipe: read the hand-formatted visual's `visual.objects` subtree
+and stamp it onto sibling visuals IN PLACE (ConvertFrom/ConvertTo-Json),
+rather than re-running a full page generator over Desktop-saved files — that
+preserves Desktop's other normalizations and any manual edits.
