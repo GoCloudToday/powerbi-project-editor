@@ -1307,3 +1307,33 @@ Propagation recipe: read the hand-formatted visual's `visual.objects` subtree
 and stamp it onto sibling visuals IN PLACE (ConvertFrom/ConvertTo-Json),
 rather than re-running a full page generator over Desktop-saved files — that
 preserves Desktop's other normalizations and any manual edits.
+
+### 2026-08-07 round 4 (full-report clone onto a new binding; hand-built DQ-to-AS chains do NOT surface remote measures)
+
+Cloned a 130-visual production report (2 pages, bookmarks, reportExtensions,
+theme resources) by copying the .Report folder, deleting the embedded-app
+visuals, and generating replacement input visuals into the app's exact slot.
+Two binding strategies tested:
+
+- **Hand-built composite chain (DQ-to-AS proxy tables) — columns work,
+  measures DON'T.** Proxy tables generated from the source model's TMDL
+  (columns + `partition X = entity` with `expressionSource`) loaded fine:
+  slicers and column-bound visuals rendered with live data. But every
+  measure-consuming visual errored ("field was deleted from the model" /
+  "you don't have required permissions" naming remote measures). A
+  Desktop-authored chain exposes source measures; a hand-built proxy set
+  evidently needs more than tables+columns (untested what — likely
+  Desktop-generated proxy metadata). Also: a TMDL-parsing proxy generator
+  must handle `column X = expr` calc columns (header has `= expr` on the
+  same line — a `column NAME\n` regex silently skips them).
+- **Thin live-bound report (byConnection) — everything resolves by
+  definition.** For an exact clone of a report whose model still exists,
+  copy the old `definition.pbir` byConnection verbatim; report-layer
+  measures go in `reportExtensions.json` (entities[].measures[] with
+  name/dataType/expression — verified shape). A data-function button works
+  identically in a live-bound report; bind its scalar params to source-model
+  columns (Aggregation-wrapped) and extension measures.
+
+Practical rule: for "exact copy of page X with its setup", clone thin-bound
+first (zero field risk), and only go composite when local tables must join
+the canvas — via a Desktop-authored chain whose TMDL you then harvest.
