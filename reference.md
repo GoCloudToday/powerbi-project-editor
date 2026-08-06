@@ -1271,3 +1271,19 @@ Rules derived:
 - Binding-metadata `defaultValue` on a `SlicerParameter` PRE-FILLS the bound
   input slicer with that value in the service — use `null` there even when
   the function's own default is a numeric sentinel.
+
+### 2026-08-07 round 2 (PowerShell JSON generators: single-element array unrolling breaks VCO cards)
+
+A generator that returns formatting-object arrays from helper FUNCTIONS
+(`function TitleVCO { @(@{...}) }`) produced Desktop errors "Property
+/visual/visualContainerObjects/title ... was not provided as the correct
+type": PowerShell unrolls a returned one-element array, so ConvertTo-Json
+serialized an OBJECT where the schema wants an ARRAY of cards. Inline
+`@(@{...})` inside a hashtable literal keeps the array; a function return
+does not. Fix: `return ,@(...)` (comma operator). Audit any PBIR generator
+by grepping the OUTPUT for `"title": {` / `"padding": {` — card properties
+must always open with `[`.
+Also verified: slicer `objects.header.show=false` removes the redundant
+field-name chrome under a VCO title; a `shape` visual panel = objects
+`shape.shapeType 'rectangle'` + two-entry fill/outline cards (selector
+default + card-level show), same split as buttons.
