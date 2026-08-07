@@ -1378,3 +1378,20 @@ on DELETED tables**. Slimming a report/model must prune
 `explorationState.sections.<page>.visualContainers.<visualName>` entries for
 every visual no longer on the page — grep bookmarks for dropped table names
 after any trim.
+
+Two more trim-fallout rules from the same session:
+
+- **"MdxScript(Model) (l,c) Cannot find table 'X'" at visual query time** =
+  a surviving measure references a deleted table. Deleting a calc GROUP whose
+  items error is NOT enough analysis: measures elsewhere may apply its items
+  via `CALCULATE(m, FILTER('Group',[Col]="Item"))` — grep all tables for the
+  group's name before deleting; usually the right fix is restoring the group
+  and only the missing measures its items reference.
+- **REST `updateDefinition` on a composite dataset WORKS when the dataset was
+  Desktop-published (processed) first** — unlike REST *create*, which yields a
+  permanently unprocessed model. Recipe: updateDefinition (definition parts
+  only, no cache), then enhanced refresh `{type:"calculate"}` — recalcs new
+  calc tables/columns/hierarchies while leaving import partition data intact
+  (verified: measures over import data unchanged after). This makes iterative
+  model surgery on a live composite dataset possible without re-running the
+  Desktop publish flow each time.
