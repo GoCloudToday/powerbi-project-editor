@@ -1337,3 +1337,44 @@ Two binding strategies tested:
 Practical rule: for "exact copy of page X with its setup", clone thin-bound
 first (zero field risk), and only go composite when local tables must join
 the canvas — via a Desktop-authored chain whose TMDL you then harvest.
+
+### 2026-08-07 round 5 (byConnection connectionString: Desktop vs service resolve it DIFFERENTLY; My Workspace is not XMLA-addressable)
+
+Two independent resolvers read `definition.pbir` → `byConnection.connectionString`,
+and they disagree:
+
+- **The service resolves by `semanticmodelid=` alone** and ignores the
+  `Data Source=` host/path. A report published via REST with a bogus
+  workspace path but a correct semanticmodelid binds and renders fine online.
+- **Desktop actually dials the `Data Source=`.** The XMLA-style
+  `powerbi://api.powerbi.com/v1.0/myorg/<workspace>` form only works for
+  NAMED org workspaces; **"My workspace" has no XMLA path** — Desktop fails
+  with "The specified Power BI workspace is not found. Workspace:
+  'My%20workspace'" (Cannot load model, ModelMode ExternalOnPrem).
+
+The shape Desktop itself writes when you pick a dataset via
+Home → Data hub (works for My Workspace and org workspaces alike):
+
+```
+Data Source=pbiazure://api.powerbi.com;initial catalog=<datasetGuid>;identity provider="https://login.microsoftonline.com/common, https://analysis.windows.net/powerbi/api, 7f67af8a-fedc-4b08-8b4e-37c4d127b6cf";integrated security=ClaimsToken;semanticmodelid=<datasetGuid>;modelid=<numericId>
+```
+
+- `initial catalog` = `semanticmodelid` = the dataset GUID.
+- The identity-provider triple is generic (common authority, PBI resource,
+  first-party Desktop client id) — copy verbatim, nothing tenant-specific.
+- `modelid` is a service-internal numeric id Desktop adds; the service
+  doesn't need it (semanticmodelid wins). If you don't know it, omit and
+  let Desktop rebind once, then harvest the string it saves.
+
+Rule: when hand-authoring `definition.pbir` that must open in BOTH Desktop
+and the service, use the `pbiazure://` shape (or, for a named org workspace,
+the `powerbi://.../<workspace name>` shape copied from a Desktop-saved file).
+Never invent `powerbi://...myorg/My workspace`.
+
+Related load-failure signature: a published PBIR report stuck forever on
+"Loading your report..." (binding + pages endpoints healthy) can be caused by
+**bookmarks whose explorationState still snapshots DELETED visuals filtered
+on DELETED tables**. Slimming a report/model must prune
+`explorationState.sections.<page>.visualContainers.<visualName>` entries for
+every visual no longer on the page — grep bookmarks for dropped table names
+after any trim.
