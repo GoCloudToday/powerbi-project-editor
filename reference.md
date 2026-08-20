@@ -1395,3 +1395,34 @@ Two more trim-fallout rules from the same session:
   (verified: measures over import data unchanged after). This makes iterative
   model surgery on a live composite dataset possible without re-running the
   Desktop publish flow each time.
+
+### 2026-08-20 (missing-number diagnostics, legend labels via calc column, header tooltips)
+
+- **"The KPI is missing" on a gauge is usually `calloutValue.show = false`**, not a
+  broken measure — the needle still renders, so the visual looks alive while the number
+  is absent. Check `calloutValue`/`calloutPercent` before touching the model. Same class
+  of bug: a table whose value column sits behind a horizontal scrollbar reads as
+  "missing column" to reviewers.
+- **`visualHeaderTooltip` did NOT produce the ⓘ header icon** (set alongside
+  `visualHeader.show = true`, valid JSON, no parse error) — the header rendered with
+  only filter/focus/more icons. Treat header tooltips as unverified in the PBIR path.
+  For durable in-report metric documentation use a native `textbox` visual instead:
+  `visualType: "textbox"` with `objects.general[0].properties.paragraphs[].textRuns[]`
+  carrying `{value, textStyle:{fontSize:"8pt", color, fontStyle}}` — static text, no
+  measure needed, visible in every view mode.
+- **Long legend labels: add a short-label CALCULATED column, don't fight the legend.**
+  A 6-series line chart in ~415px truncated to 4 legend entries plus a scroll arrow
+  (a Top legend scrolls, it does not wrap). Fix: a DAX calc column mapping the long
+  category to a short one (SWITCH with the original column as the fallback), then point
+  the Series role AND the `dataPoint` scopeId pins at the SHORT column and move the
+  legend to `'Right'`. A calc column on an M-partition lookup table recalculates when
+  Desktop opens — no data refresh, and the M text stays untouched (Iron Rule intact).
+- **Legend title = the projection's `displayName`** — set it on the Series projection
+  ("Driver Short" as a legend header reads like a bug; "Driver" is what you want).
+- **Validating generated JSON: `powershell` (5.1) `ConvertFrom-Json` has no `-Depth`**
+  (use `pwsh`/PowerShell 7, or omit it). And `try { Get-Content bad-path | ConvertFrom-Json }`
+  reports success — Get-Content's non-terminating error leaves `$null`, which converts
+  fine. Always pass `-ErrorAction Stop` or `Test-Path` first, else you get a false OK.
+- **Hand-writing PBIR filter clauses is brace-count-fragile**: the
+  `Where[0].Condition.Not.Expression.Comparison` chain needs SEVEN closing braces before
+  the `]`. Generate filters by copying a known-good file rather than typing the nesting.
