@@ -1426,3 +1426,37 @@ Two more trim-fallout rules from the same session:
 - **Hand-writing PBIR filter clauses is brace-count-fragile**: the
   `Where[0].Condition.Not.Expression.Comparison` chain needs SEVEN closing braces before
   the `]`. Generate filters by copying a known-good file rather than typing the nesting.
+
+### 2026-08-21 (report-page tooltips: what can and cannot carry one)
+
+Verified in the Desktop Format pane (the authoritative check — open the visual's
+Format > General and look for a Tooltips section):
+
+- **Buttons/shapes CANNOT have tooltips.** An `actionButton`'s General tab offers only
+  Properties, Title, Effects, Header icons, Alt text — no Tooltips. Writing
+  `visualContainerObjects.visualTooltip` onto a button is silently ignored (valid JSON,
+  no error, no tooltip). Same for the ⓘ header-icon route: `visualHeaderTooltip` never
+  rendered an info icon on any visual type tried.
+- **Report-page tooltips work on DATA visuals.** Wiring (matches what Desktop writes):
+  `visualContainerObjects.visualTooltip[0].properties` = `show:true`,
+  `section:'<tooltipPageName>'`, `type:'Canvas'`. The tooltip page itself is a normal
+  page folder with `page.json` carrying `"type": "Tooltip"`,
+  `"visibility": "HiddenInViewMode"`, `"displayOption": "ActualSize"` and an explicit
+  height/width; register it in `pages.json` `pageOrder` like any page. Rich formatted
+  text comes from a plain `textbox` visual on that page — `paragraphs[].textRuns[]`
+  each with their own `textStyle` (`fontSize`, `color`, `fontWeight:'bold'`), which is
+  how you get bold run-in labels and paragraph spacing (spacer paragraphs with a single
+  space at a small fontSize).
+- **A visual with nothing rendered has no hover target.** A card wired to a blank
+  measure fires no tooltip at all; and a card with its `fillCustom` turned OFF stops
+  hit-testing too. To make an invisible-but-hoverable hotspot you need a rendered
+  surface: keep `fillCustom.show = true` (fill it the same colour as the canvas),
+  turn `outline.show` off, and give it a real (even single-character) value.
+  Note `fillCustom`/`outline` are the CARD FACE and are separate from the container's
+  `background`/`border` — turning off the container background alone leaves the card
+  face painted.
+- **You cannot screenshot a tooltip.** The popup composites on its own layer: it
+  captures as a plain white rectangle (the report's own pre-existing, working tooltips
+  capture identically blank), and it spawns no new top-level window, so UIA finds
+  nothing to read. Verify the tooltip PAGE by opening it as a page, verify the WIRING
+  by diffing against a known-good visual, and leave the hover check to a human.
