@@ -1455,8 +1455,19 @@ Format > General and look for a Tooltips section):
   Note `fillCustom`/`outline` are the CARD FACE and are separate from the container's
   `background`/`border` — turning off the container background alone leaves the card
   face painted.
-- **You cannot screenshot a tooltip.** The popup composites on its own layer: it
-  captures as a plain white rectangle (the report's own pre-existing, working tooltips
-  capture identically blank), and it spawns no new top-level window, so UIA finds
-  nothing to read. Verify the tooltip PAGE by opening it as a page, verify the WIRING
-  by diffing against a known-good visual, and leave the hover check to a human.
+- **Tooltips DO capture in screenshots** once they actually fire — a blank white
+  rectangle means the popup opened but its page rendered nothing (e.g. a tooltip page
+  whose measures are blank in that context), not that capture failed. The popup spawns
+  no new top-level window, so UIA finds nothing to read; screenshot it instead.
+- **Working pattern for an info (ⓘ) icon with a rich tooltip**: keep the native
+  `actionButton` (`icon.shapeType: 'information'`) purely for the ICON — it renders
+  crisply at any size — and place a tooltip-carrying `cardVisual` BEHIND it
+  (lower `z`), slightly larger, fully invisible (`fillCustom` white + shown so it stays
+  hit-testable, `outline`/`title`/`visualHeader` off, value font colour white). The
+  button does NOT swallow the hover: hovering the icon centre fires the card's report-
+  page tooltip. Verified end-to-end.
+- **Don't try to render an icon from a Unicode glyph in a card** (e.g. UNICHAR(9432)
+  for ⓘ): the `cardVisual` callout clips it at small tile sizes and the glyph is
+  illegible below ~40px — the shape looks "cropped" no matter how the padding
+  (`layout.cellPadding`, `cardCalloutArea.padding*`) is zeroed. Use the button for the
+  glyph and the card only as an invisible hover surface.
