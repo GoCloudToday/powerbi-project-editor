@@ -1461,11 +1461,19 @@ Format > General and look for a Tooltips section):
   no new top-level window, so UIA finds nothing to read; screenshot it instead.
 - **Working pattern for an info (ⓘ) icon with a rich tooltip**: keep the native
   `actionButton` (`icon.shapeType: 'information'`) purely for the ICON — it renders
-  crisply at any size — and place a tooltip-carrying `cardVisual` BEHIND it
-  (lower `z`), slightly larger, fully invisible (`fillCustom` white + shown so it stays
-  hit-testable, `outline`/`title`/`visualHeader` off, value font colour white). The
-  button does NOT swallow the hover: hovering the icon centre fires the card's report-
-  page tooltip. Verified end-to-end.
+  crisply at any size — and lay a tooltip-carrying `cardVisual` ON TOP of it
+  (higher `z`), slightly larger, visually invisible: `outline`/`title`/`visualHeader`
+  off, value font colour white, and BOTH the card face (`fillCustom`) and the container
+  `background` set to `show:true` + `transparency:100D`. Hovering the icon fires the
+  card's report-page tooltip while the button shows through. Verified end-to-end.
+  (It also works with the card BEHIND the button — a button does not swallow the hover —
+  but on top is the safer layering, since it does not depend on that behaviour.)
+- **`fillCustom.show = false` does NOT mean "no fill"** — it means "no CUSTOM fill", so
+  the card falls back to the theme default, which is an OPAQUE WHITE face that hides
+  anything beneath it. The same trap applies to the container `background`. For a
+  transparent-but-still-hit-testable surface you must set `show:true` WITH
+  `transparency:100D`; turning fills off gives you an opaque card that also stops
+  hit-testing when fully disabled.
 - **Don't try to render an icon from a Unicode glyph in a card** (e.g. UNICHAR(9432)
   for ⓘ): the `cardVisual` callout clips it at small tile sizes and the glyph is
   illegible below ~40px — the shape looks "cropped" no matter how the padding
