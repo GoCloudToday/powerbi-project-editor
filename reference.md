@@ -1572,3 +1572,62 @@ This is the whole bug class, and it is invisible to anyone with write access:
   (with object names wrapped in `<oii>` tags). Read it rather than guessing at a 400.
 - `EVALUATE … ORDER BY` must come AFTER the `RETURN` expression; putting it between
   `EVALUATE` and `VAR` gives `The syntax for 'ORDER' is incorrect`.
+
+### 2026-08-25 round 2 (deploying a Gen1 dataflow M fix end-to-end via API, and validating when the source is ALSO being fixed)
+
+Continuation of the RLS-orphan incident: the drafted M edits were pasted into Power
+Query Online by the operator, then everything else ran over the REST API. What the
+deployment and validation taught:
+
+**Gen1 dataflow deploy/verify loop (no portal beyond the paste).**
+- Paste-ready M for PQ Online's per-query Advanced editor is the bare `let … in X`
+  body — NO `shared <name> =` wrapper, no trailing semicolon (that dialect belongs to
+  the mashup document). `//` comments survive fine.
+- Verify a save landed by re-GETting `/v1.0/myorg/groups/{ws}/dataflows/{id}` and
+  grepping `pbi:mashup.document` for markers of the edit. Trap: the JSON deserializer
+  already unescaped the doubled quotes — grep for `Item = "Event"`, not
+  `Item = ""Event""`, or a real edit looks missing.
+- The same GET's `entities[].attributes` confirms the schema projection survived
+  (attribute count + names) — check it before refreshing.
+- Trigger with `POST …/dataflows/{id}/refreshes` body `{"notifyOption":"NoNotification"}`;
+  poll `…/transactions?$top=1` (status InProgress → Success/Failed). Dataset refreshes:
+  `POST …/datasets/{id}/refreshes`, poll `…/refreshes?$top=1` — status **"Unknown"
+  means in-progress**, not an error. A ~200M-row 8-partition import completed in
+  ~11 min, so don't assume a fast Completed was partial. The refresh-detail endpoint
+  (`…/refreshes/{requestId}`) returned `objects: []` here — no per-partition
+  breakdown on this capacity; absence of objects is not failure.
+- Chainable unattended: a background loop that polls the dataflow transaction and,
+  on Success, fires both dataset refresh POSTs and keeps polling those, closes the
+  whole pipeline without an operator. Acquire the token fresh each iteration
+  (loops outlive the ~1h token); transient `No such host is known` / SSL drops
+  happen mid-loop — catch and continue, don't abort.
+
+**Validation when upstream may be fixing itself concurrently — the surprises:**
+- The compensating fix validated "wrong" in the best way: ZERO placeholder rows were
+  created because the source team had backfilled the missing master rows THE SAME DAY
+  (a previously-dangling key came back with its real attributes — a placeholder can
+  never produce those). During an active incident, assume the upstream fix may race
+  yours: distinguish by checking whether recovered rows carry real attributes or your
+  placeholder literals.
+- One refresh cycle cannot distinguish "residue = moving target during refresh" from
+  "residue = stable phenomenon". Run a SECOND full cycle: byte-identical counts
+  across two cycles ~30 min apart kill every timing/replication-lag theory at once.
+- **Close-out test for an RLS data-loss incident: split the residual unmatched rows
+  by whether their TENANT dimension row resolves.** Residue attached to tenants that
+  exist (and are user-mapped) is customer-visible damage; residue on "phantom"
+  tenants absent from every dimension is invisible under RLS (no key → no mapping →
+  no path) and does not block closing the incident. Here 99.99% of the residue was
+  phantom-tenant rows — the incident closed with 61 real-tenant rows outstanding.
+- Leak guard belongs in the final validation: for 2–3 tenants, role-emulated count
+  must be ≤ the tenant-filtered baseline. Emulation EQUAL to baseline is the healthy
+  outcome; emulation slightly below = rows hidden (safe direction); above = leak.
+- Static-analysis dead ends worth skipping next time: a "Historical" fact-query
+  family turned out to read the SAME source tables (not an archive), and identical
+  date windows between fact and dimension queries were verified twice — when facts
+  contain keys that a same-window, same-table dimension union cannot see, stop
+  theorizing from M text and demand direct SQL against the source; nothing model-side
+  can decide it.
+- Reading `ROW(...)` results via the REST API through Format-Table: a 0/blank prints
+  as an EMPTY cell — a zero and a blank are indistinguishable at a glance and columns
+  misalign easily with 6+ measures. For decision-grade numbers, name columns with the
+  expected baseline in the label ("was 1334710") and prefer fewer measures per query.
