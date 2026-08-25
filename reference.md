@@ -1479,3 +1479,96 @@ Format > General and look for a Tooltips section):
   illegible below ~40px — the shape looks "cropped" no matter how the padding
   (`layout.cellPadding`, `cardCalloutArea.padding*`) is zeroed. Use the button for the
   glyph and the card only as an invisible hover surface.
+
+### 2026-08-25 (published-model forensics: reading RLS from the service, and RLS-over-a-dangling-FK silently deleting fact rows)
+
+Task: a tenant reported "historical data missing" in an embedded report while the
+investigator, holding write access on the same model, saw the full figures. Two
+sibling models (one internal, one external-facing) shared the diagnosis. Nothing was
+edited; everything below is read-only forensics against PUBLISHED models.
+
+**Getting model metadata out of a published semantic model — three routes, one works.**
+- `EVALUATE INFO.ROLES()` / `INFO.TABLEPERMISSIONS()` / `INFO.ROLEMEMBERSHIPS()` through
+  the REST `executeQueries` endpoint are **blocked**: HTTP 400, `DatasetExecuteQueriesError`,
+  `AnalysisServicesErrorCode 3239575574`. Wrapping in `SELECTCOLUMNS` does not help —
+  it is the security metadata that is refused, not the column shape. Non-security
+  INFO functions are fine (`INFO.VIEW.RELATIONSHIPS()` returned 60 rows on the same model).
+- XMLA via ADOMD using an Azure-PowerShell token for the Power BI resource
+  (verified `aud=https://analysis.windows.net/powerbi/api`, `scp=user_impersonation`)
+  fails `Open()` with `The remote server returned an error: (401) Unauthorized`, even
+  though the SAME token authenticates the REST API fine. Do not burn time on the token.
+- **WORKS — the items API.** `POST /v1/workspaces/{ws}/semanticModels/{id}/getDefinition?format=TMDL`
+  → 202, poll the `Location` header until `status=Succeeded`, then GET `<location>/result`.
+  Parts are base64 TMDL: `definition/roles/*.tmdl` with the verbatim `tablePermission`
+  expressions, `relationships.tmdl`, and every table. This is the reliable way to read
+  RLS off a model you cannot open in Desktop.
+- ADOMD under PowerShell 7 throws `Could not load type
+  'System.Runtime.Remoting.Messaging.CallContext' from assembly 'mscorlib'` — the client
+  is .NET Framework. Run it under Windows PowerShell 5.1 (and note Az cmdlets may only
+  exist in the 7 install, so acquire the token in 7 and hand it over by environment
+  variable rather than re-authenticating).
+
+**Gen1 dataflow definitions download over the API, but not the Gen2 way.**
+`POST /v1/workspaces/{ws}/dataflows/{id}/getDefinition` returns **HTTP 500
+`{"errorCode":"UnknownError"}`** for a Gen1 dataflow — that endpoint is Gen2-only, and
+the 500 is not a transient failure. Use `GET /v1.0/myorg/groups/{ws}/dataflows/{id}`:
+the response IS model.json, and `pbi:mashup.document` holds one `section Section1;`
+document with a `shared <name> = let … ;` block per entity, native SQL included. That
+is the API equivalent of the portal's Export .json (see §2026-07-21) and needs no
+operator. 28 entities / 65 shared queries came back in a 89 KB payload.
+
+**RLS enforced through a dimension DELETES fact rows whose FK does not resolve.**
+This is the whole bug class, and it is invisible to anyone with write access:
+- An unmatched foreign key attaches the fact row to the relationship's virtual blank
+  member. A `tablePermission` on that dimension — however written — excludes the blank
+  member, so every such fact row disappears for RLS users only.
+- Filtering the fact's *own* tenant dimension does NOT do this. Isolate the culprit by
+  applying each role predicate separately with `TREATAS` under `CALCULATE`. Measured on
+  one tenant: tenant-table predicate alone 42,464 rows (= unrestricted); adding the
+  product-dimension predicate 9,639. The second number reproduced the user's screenshot
+  to the row, month by month.
+- **The obvious relaxation is a cross-tenant data breach — do not ship it.** Widening the
+  predicate to `… || ISBLANK(bridge[key])` does restore the tenant's rows, and also
+  hands them every OTHER tenant's dangling rows: the same query went from 9,639 to
+  **1,683,563**. The blank member is global, not per-tenant. Measure before proposing it.
+- The safe repair is to BACKFILL real placeholder dimension rows carrying the tenant key,
+  so each tenant's dangling facts land in its own bucket. Precondition to verify first:
+  every dangling key must map to exactly ONE tenant, or the placeholders duplicate the
+  dimension's key column and break the relationship. Verified here by comparing distinct
+  keys to distinct (key, tenant) pairs across both fact tables — 169,493 vs 169,493.
+
+**Attributing a dangling FK to the source vs to your own pipeline — do the superset argument.**
+- Do not call a dimension "pass-through" from the dataflow alone. Here the dataflow did
+  hold verbatim copies of several dimensions, but the MODELS consumed none of them —
+  they all derived from a single upstream entity that was date-windowed, excluded
+  sentinel keys, and INNER JOINed three master tables. Its unmatched-FK counts (1.78M
+  fact rows) therefore proved nothing about source integrity; that loss was the
+  pipeline's own. Read the query the model actually binds to before assigning blame.
+- The sound test is a **superset argument**. The product dimension was trimmed by
+  `Table.Join(master, {key}, Table_Keys, {key}, JoinKind.Inner)` where `Table_Keys` was
+  `DISTINCT(key)` over the ENTIRE line tables — no date filter, no exclusions — while
+  the model's facts are a strict subset of those lines. The join's right side is thus a
+  superset of anything the model can reference, so the trim cannot drop a key the facts
+  use; absence proves the MASTER lacks the row. That is a proof, not an inference, and
+  it survived review where the "pass-through" argument did not.
+- Corroborate with the source's own conventions: the master contained a `-1`
+  unknown-member row that resolved normally (339,214 fact rows used it), so the 1.33M
+  dangling rows citing specific, plausible keys are a real referential break rather than
+  flagged unknowns. Zero fact rows used the sentinel on the tenant/site keys.
+- Signature of a surrogate re-key wave: within ONE tenant, site and owner constant, the
+  key band jumps generation (~28.9M in older months, ~82.9M in recent ones) with a clean
+  month cutover, old band absent from the master. Fact rows are re-stamped with the new
+  owner id but their line-level keys are never remapped.
+
+**`executeQueries` operational limits worth knowing.**
+- `impersonatedUserName` — the documented way to reproduce an RLS identity — returns
+  **HTTP 401 `RLSNotAuthorizedForModel`** unless you own or administer the dataset. On a
+  model configured by someone else, simulate the role with `TREATAS` instead; it matched
+  the real report output exactly.
+- Resource Governance rejects wide `SUMMARIZECOLUMNS` over a high-cardinality document
+  identifier: `consumed memory 10488 MB, memory limit 10240 MB`. Narrow to one period and
+  `SUMMARIZE` over an already-filtered `CALCULATETABLE` instead of filtering afterwards.
+- Error payloads ARE usable: the `DetailsMessage` detail carries the verbatim DAX error
+  (with object names wrapped in `<oii>` tags). Read it rather than guessing at a 400.
+- `EVALUATE … ORDER BY` must come AFTER the `RETURN` expression; putting it between
+  `EVALUATE` and `VAR` gives `The syntax for 'ORDER' is incorrect`.
