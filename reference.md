@@ -1631,3 +1631,40 @@ deployment and validation taught:
   as an EMPTY cell — a zero and a blank are indistinguishable at a glance and columns
   misalign easily with 6+ measures. For decision-grade numbers, name columns with the
   expected baseline in the label ("was 1334710") and prefer fewer measures per query.
+
+### 2026-08-26 (headless device-code auth for the dataflow REST API when no CLI or cached token exists)
+
+Goal: download two Gen1 dataflow definitions (`GET /v1.0/myorg/groups/{ws}/dataflows/{id}`)
+on a machine with no `az` CLI, no cached Power BI login, and a non-interactive session
+(interactive `Login-PowerBIServiceAccount` popup was rejected; the operator wanted to
+pick the browser themselves). What actually worked, and the three walls hit first:
+
+- **`Connect-AzAccount -UseDeviceAuthentication` can hang silently before printing a
+  device code** when both Az and AzureRM modules are installed (it emitted only the
+  coexistence warning, then nothing for minutes). Don't wait on it — go straight to
+  raw HTTP against the token endpoints; the whole flow is two `Invoke-RestMethod`
+  calls plus a poll loop.
+- **`/common` and `/organizations` now refuse the device-code grant outright**
+  (`AADSTS50059: No tenant-identifying information found`) for classic public clients
+  — this is NOT a body-encoding problem (reproduced byte-identical via curl). A
+  concrete tenant in the authority URL is mandatory. Resolve the tenant GUID without
+  any auth from `https://login.microsoftonline.com/<domain>/v2.0/.well-known/openid-configuration`
+  (issuer segment) — but the domain must be the AAD tenant's domain, not the
+  operator's email host. Local fallbacks for discovering candidate tenants:
+  `dsregcmd /status` (home + workplace tenant GUIDs) and
+  `HKCU:\Software\Microsoft\Office\16.0\Common\Identity\Identities`.
+- **The classic Azure PowerShell client id (`1950a258-…`) is not present in every
+  tenant** (`AADSTS700016` in the target tenant). The Azure CLI first-party client
+  `04b07795-8ddb-461a-bbee-02f9e1bf7b46` was: v1 device-code + token endpoints with
+  `resource=https://analysis.windows.net/powerbi/api` succeeded and the resulting
+  token was accepted by the dataflows REST API.
+- Working recipe (v1 endpoints, PowerShell): POST
+  `https://login.microsoftonline.com/<tenantGuid>/oauth2/devicecode` with
+  `client_id` + `resource`; show `message` to the operator (they open
+  `login.microsoft.com/device` in ANY browser — this is what makes the flow
+  operator-browser-agnostic); poll POST `…/oauth2/token` with
+  `grant_type=urn:ietf:params:oauth:grant-type:device_code` every 5s, treating
+  `authorization_pending` as continue and anything else as fatal.
+- Confirmed again on both downloads: Gen1 `GET /v1.0/myorg/groups/{ws}/dataflows/{id}`
+  returns the full model.json with every query's M in `pbi:mashup.document`
+  (75k chars for a 15-entity dataflow) — grep it like a source file.
