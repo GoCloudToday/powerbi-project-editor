@@ -1668,3 +1668,63 @@ pick the browser themselves). What actually worked, and the three walls hit firs
 - Confirmed again on both downloads: Gen1 `GET /v1.0/myorg/groups/{ws}/dataflows/{id}`
   returns the full model.json with every query's M in `pbi:mashup.document`
   (75k chars for a 15-entity dataflow) — grep it like a source file.
+
+### 2026-08-27 (authoring a NEW Gen1 dataflow as import-dialect model.json from SQL sources, validated offline)
+
+Task: a technical data-quality feed (headers without lines, lines without headers, unknown /
+missing product keys) over a warehouse's raw fact tables, delivered as an importable Gen1
+dataflow JSON for the operator to upload. No database access was available from the session
+(the auto-mode classifier blocks SqlClient connections to the warehouse even for a read-only
+`INFORMATION_SCHEMA` lookup — don't retry, document assumptions instead), so everything had to
+be right by construction.
+
+**Build pipeline that worked first time (after its own guard rails fired twice).**
+- Keep each entity's T-SQL in its own `.sql` file; a PowerShell 7 script composes the
+  `section Section1;` document (`shared #"Name" = let Result = Value.NativeQuery(Source, "<sql>",
+  null, [EnableFolding = true]) in Result;`), escapes `"` → `""`, and splices parameters by
+  replacing a token with `" & DateLimit & "` (parameters are ordinary non-loaded queries:
+  `shared MonthsBack = let MonthsBack = 24 meta [IsParameterQuery=true, List={}, Type="Number",
+  IsParameterQueryRequired=true] in MonthsBack;`). Emit the JSON with ordered hashtables and
+  `ConvertTo-Json -Depth 12`, UTF-8 without BOM; write the document to a sibling `.pq` for review.
+- Validate offline with **ScriptDom**: `Microsoft.SqlServer.TransactSql.ScriptDom.dll` ships in the
+  SqlServer PowerShell module (use the `coreclr\` copy under pwsh 7) and in SSMS. `TSql160Parser`
+  → parse errors with line/column; then walk `SelectStatement.QueryExpression`
+  (`QuerySpecification.SelectElements`, alias = `ColumnName.Value` else last identifier of the
+  `ColumnReferenceExpression`) to derive the outermost output column list and compare it, name
+  AND order, with the declared `entities[].attributes` — the service enforces that projection.
+  Also assert the top-level query is a plain `QuerySpecification` (no top-level UNION) and has no
+  `OrderByClause`.
+- Guard rails for a foldable native query (the service wraps it as a derived table for previews):
+  no `--` comments (a trailing one swallows the `) AS t` wrapper — use `/* */`), no `;`, no `"`,
+  no `ORDER BY`, no CTE (`WITH` cannot be wrapped). Express a hierarchy climb as fixed-depth
+  LEFT self-joins keyed on a level/depth column (`COALESCE(CASE WHEN o0.[Level] = 2 THEN …`) rather
+  than a recursive CTE — it reproduces `PATHITEM(PATH(id, parent), n)` exactly when the table
+  carries a numeric depth.
+
+**Header-vs-line integrity counters in ONE entity.** `UNION ALL` a header-attributed aggregate
+(headers LEFT JOIN lines, two-level GROUP BY: per header first — line count, bad-key line counts —
+then per grain, so header-level prevalence is a `SUM(CASE WHEN badLines > 0)`) with a line-only
+orphan aggregate (lines anti-joined to headers, attributed by the line's own keys/date), zero-fill
+the other side's columns, and GROUP BY the grain once more. GROUP BY treats NULL periods as one
+group, which a FULL OUTER JOIN on the grain would not. Helpers: `CROSS APPLY (SELECT expr AS x)`
+names a computed column once for reuse in WHERE/GROUP BY; `DATEFROMPARTS(YEAR(d), MONTH(d), 1)`
+returns NULL for NULL `d` (no CASE needed); `TRY_CONVERT(date, CAST(intYYYYMMDD AS char(8)), 112)`
+neutralises garbage date keys; make "unknown member" and "not in master" disjoint explicitly
+(`key = -1` vs `key <> -1 AND master.key IS NULL`, NULL keys counted with the latter).
+
+**Column-name oracle without DB access.** Production queries that refresh daily prove every
+column they reference; a previously refreshed dataflow's `Table.Group(tbl, {"Col"})` proves that
+column exists on that table; an UNqualified column in a multi-table SELECT proves it exists in
+exactly one of the joined tables, but a qualified `T2.[Col]` proves nothing (authors qualify out of
+habit). Never declare an unproven column — emit a sentinel (`CAST(-1 AS int)`) and document the
+one-line switch. A large `Structure/` dump of every dataflow's M (one file per query) plus the
+model `.bim` was the fastest way to establish all of this.
+
+**Grain/date decisions worth reusing.** Period = header CREATION month with fallbacks (shipped →
+order date), because the consumer model windows on shipped date and INNER-joins a country calendar,
+which hides exactly the unshipped/undated documents a DQ feed must show. Keep undated rows with
+`Period = NULL` rather than dropping them (they are the defects). Lines with a header inherit the
+header's period so header- and line-level ratios agree per month.
+
+**Harness note:** tool outputs above ~50 KB are persisted to a file that may keep only the tail;
+read big source files in explicit `sed -n 'a,bp'` ranges (≤ ~300 lines of SQL per call).
