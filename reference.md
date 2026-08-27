@@ -1728,3 +1728,12 @@ header's period so header- and line-level ratios agree per month.
 
 **Harness note:** tool outputs above ~50 KB are persisted to a file that may keep only the tail;
 read big source files in explicit `sed -n 'a,bp'` ranges (≤ ~300 lines of SQL per call).
+
+**Import trap found on upload (same day):** the service REJECTS a model.json whose
+`pbi:mashup.allowNativeQueries` is `true` — "Can't publish dataflow. Invalid dataflow parameter
+value … For security reasons, AllowNativeQueries should be set to false on import (can be set to
+true after import from the Power BI service)". Exported definitions of native-query dataflows
+carry `true`, so a copy-the-export authoring habit fails here. Emit `false`, then have the
+operator approve once in Power Query Online: Edit tables → open a `Value.NativeQuery` query →
+"Permission is required to run this native database query" → Edit permission → Run → Save &
+close (that save flips the flag). Refresh before that step fails on every native-query entity.
