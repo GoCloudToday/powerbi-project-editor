@@ -68,6 +68,12 @@ keep/kill graph, gate, deleters, fingerprint suite) is worth carrying per repo u
    (`List.Contains(xs, x, ci)` × 92k rows ≈ 70M calls) → pre-normalize once into
    buffered ordinal lists. Big-entity aggregation stays DAX calc columns over loaded
    tables (compressed engine scan); M gets row-local transforms and small joins.
+   **Never touch a NestedJoin's nested column per row before `ExpandTableColumn`**
+   (`Table.RowCount([Nested])`, `Table.IsEmpty`, `[Nested]{0}`…): each row then
+   re-evaluates the whole right side including its source reads — measured 12,382
+   downloads of each dataflow CSV for a 19k-row dimension, 3.5 h, machine crash. For
+   a "matched" flag, add a constant `each true` column to the RIGHT table and expand
+   it (unmatched → null). reference.md §2026-08-28.
 
 ## Quick reference
 

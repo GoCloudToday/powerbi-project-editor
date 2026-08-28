@@ -1737,3 +1737,39 @@ carry `true`, so a copy-the-export authoring habit fails here. Emit `false`, the
 operator approve once in Power Query Online: Edit tables → open a `Value.NativeQuery` query →
 "Permission is required to run this native database query" → Edit permission → Run → Save &
 close (that save flips the flag). Refresh before that step fails on every native-query entity.
+
+### 2026-08-28 (per-row access to a NestedJoin's nested column re-evaluates the RIGHT side per row — crashed the machine)
+
+Added a "does this customer have a row in the live ERP feed?" flag to a ~19k-row
+customer dimension as `Table.NestedJoin(...)` followed by
+`Table.AddColumn(..., each Table.RowCount([NestedCol]) > 0)` BEFORE the
+`Table.ExpandTableColumn`. Measured outcome: five parallel mashup containers ran
+3.5 hours, then the machine hard-crashed (Kernel-Power 41) — four times across
+retries. The container trace (`Traces/Performance/Microsoft.Mashup.Container*.log`)
+showed each of the three dataflow CSVs behind the right-side query downloaded
+**12,382 times** in one container (9,348 in a sibling that consumed the same
+dimension through its own join) — once per left row. The memory from thousands of
+cached blob streams, times five containers, is what took the machine down (not the
+join arithmetic: 19k×19k is nothing).
+
+Mechanism: `Table.ExpandTableColumn` on a NestedJoin column is what triggers the
+bulk hash-join path. Touching the nested table column per row FIRST (`Table.RowCount`,
+`Table.IsEmpty`, `[Nested]{0}`, `List.First(Table.Column(...))` — anything) makes each
+row's nested table a lazy, independent re-evaluation of the right-side expression,
+including every source read beneath it. Non-foldable sources (dataflow CSVs, Excel,
+web) pay the full download each time.
+
+Rules derived:
+- Never evaluate a NestedJoin's nested column per row before expanding it. Need a
+  "matched" flag? Add a constant column to the RIGHT table (`each true`) and expand
+  it alongside the payload — unmatched rows come back null. Same trick carries any
+  per-match constant.
+- Diagnose a "refresh runs for hours then the machine dies" report from the container
+  perf logs, not from theory: `grep -oE 'ResourcePath":"[^"]+\.csv' <log> | sort |
+  uniq -c` — a source read count in the thousands is the storm signature; a healthy
+  evaluation reads each dataflow CSV a handful of times (4 per container here for the
+  big fact CSVs).
+- A first-time-ever crash on a model that refreshed fine last week means the LAST M
+  edit, not machine sizing: check `Get-WinEvent -FilterHashtable @{LogName='System';
+  Id=41,6008}` for the crash timestamps and line them up with the trace file names
+  (which carry UTC; the event log is local time).
