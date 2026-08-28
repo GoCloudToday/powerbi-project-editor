@@ -1773,3 +1773,50 @@ Rules derived:
   edit, not machine sizing: check `Get-WinEvent -FilterHashtable @{LogName='System';
   Id=41,6008}` for the crash timestamps and line them up with the trace file names
   (which carry UTC; the event log is local time).
+
+### 2026-08-28 round 2 (rebasing a cloned page onto a different date column without touching its visuals)
+
+Ask: "copy this page, but make every date axis use column X instead of the fact's
+default date" (here: order-creation vs reporting date; the page mixed a custom
+waterfall by Quarter/Month, three custom tables with PY columns, and a Year slicer,
+all bound to the shared date dimension, with PY coming from a time-intelligence
+calculation group).
+
+What worked — zero visual rebinding:
+1. Model: an **inactive** relationship `Fact[X] → Date[Date]` (`isActive: false`; the
+   source column carried a time part, so `joinOnDateBehavior: datePartOnly`, which
+   TMDL accepts on user relationships even though Desktop's UI never exposes it —
+   verified via `TMSCHEMA_RELATIONSHIPS.JoinOnDateBehavior = 2`).
+2. Model: a two-item calculation group `Date Basis` — a no-op item
+   (`SELECTEDMEASURE()`) and `CALCULATE(SELECTEDMEASURE(), USERELATIONSHIP(Fact[X],
+   Date[Date]))` — with explicit `precedence:` (a second group needs one). It
+   composes with the existing time-intelligence group in either nesting order:
+   `USERELATIONSHIP` stays in force for the nested `SAMEPERIODLASTYEAR` evaluation.
+   Hand-authored TMDL for a calc group: `calculationGroup` / `precedence:` /
+   `calculationItem 'name' = <dax>` with `ordinal:` under each item, plus the two
+   columns (`sourceColumn: Name` with `sortByColumn: Ordinal`, and `Ordinal`).
+   No M touched → no partition invalidation; the model loaded with everything Ready.
+3. Report: clone the page folder (fresh 20-hex ids for page, `pageBinding.name`, every
+   visual, every `Filter…` name; text-replace the old ids so `visualInteractions`
+   follow; folder name must equal visual.json `name`), insert the id into
+   `pages.json.pageOrder`, and add ONE page-level filter
+   `'Date Basis'[Date Basis] = "X item"` (Categorical, `filter.Where In` literal,
+   `isHiddenInViewMode: true`). Every measure on the page now evaluates on X; the
+   source page and all others are untouched because the group is inert without a
+   filter on its column.
+4. Acceptance = one EVALUATE over YearMonth with the measure under both bases side by
+   side (`CALCULATE([M], 'Date Basis'[Date Basis] = "X")` vs `[M]`), plus PY under X
+   — PY is legitimately blank before the alternate column's first year of data.
+
+Side findings:
+- Six visuals bound their PY role to a measure that did NOT exist in the model
+  (`Table.Measure` string with no definition) — Rule 8 territory: the frontend never
+  complained. Sweep report queryRefs against the model's measure inventory before
+  cloning a page; a clone propagates broken bindings.
+- Moving a report-level filter to page level (so one page can opt out): remove the
+  node from `report.json.filterConfig.filters`, append a copy (fresh `name`, `ordinal`
+  = page max + 1) to every other `page.json.filterConfig.filters`. Pages may lack
+  `filterConfig` entirely — create it. Verify: exactly one instance per page, zero at
+  report level, zero on the opted-out page.
+- PowerShell gotchas that bit: `(if ...)` inline is not an expression (use `$(if …)`),
+  and `blank` is a reserved word inside DAX `EVALUATE VAR`.
