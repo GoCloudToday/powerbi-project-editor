@@ -1880,3 +1880,27 @@ text files for `EF BB BF`.
   new table sat at `State=3` awaiting its first refresh.
 - `TMSCHEMA_MEASURES` with `WHERE [ErrorMessage] <> ''` does not filter (all rows return,
   messages empty) — filter client-side before declaring "36 measures with errors".
+
+### 2026-08-31 round 2 (UI-driving the generated report exposed two generator bugs no offline audit caught)
+
+Driving Desktop (open → Refresh → walk pages → screenshot) after the offline audits passed
+surfaced two real defects and one false alarm:
+
+- **`visualContainerObjects` members must be ARRAYS, and PowerShell unwraps them.** A helper
+  function returning `@( @{properties=…} )` gets single-element-array-unwrapped on return, so
+  `"title": [ {…} ]` silently became `"title": {…}`. Desktop refused the REPORT with
+  "Your report has issues that could not be resolved … Property /visual/visualContainerObjects/title
+  in visuals/<name>/visual.json was not provided as the correct type" — one line per affected
+  visual (32 = exactly the visuals with titles), and fell back to an Untitled window. Fix: have
+  helpers return ONE object and wrap at the call site (`title = @(TitleObj …)`). Audit rule
+  added: every member of `objects`/`visualContainerObjects` must be an IList.
+- **A validator that also mutates state can reintroduce the bug it checks.** The audit script's
+  theme-registration step re-COPIED the theme from the BOM'd source on every rerun, resurrecting
+  the BOM error that had just been fixed by hand. Any build/audit step that copies resources in
+  must do the normalization (BOM strip) itself, idempotently — not rely on a one-time manual fix.
+- **Blank visuals on a freshly opened page ≠ blank data.** One page screenshotted all-white at
+  t+4s after the tab switch (first render still computing); a sibling page with literal zeros
+  rendered "0"/"0.00%" fine. Settle data-vs-render with a DAX `EVALUATE ROW(SUM…)` against the
+  local msmdsrv (OleDb) before touching the report — here the data existed (5,942 rows worth)
+  and a t+10s re-capture rendered fully. This is the render-timing sibling of the
+  "zero delta is a data fact" rule.
