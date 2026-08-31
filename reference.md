@@ -1904,3 +1904,38 @@ surfaced two real defects and one false alarm:
   local msmdsrv (OleDb) before touching the report — here the data existed (5,942 rows worth)
   and a t+10s re-capture rendered fully. This is the render-timing sibling of the
   "zero delta is a data fact" rule.
+
+### 2026-09-01 (rotating "cyclic reference" on refresh = Desktop parallel-loading bug; chunking a server-killing aggregate; locked-session verification)
+
+Sequel to the scripted DQ build — three earned rules:
+
+**"A cyclic reference was encountered during evaluation", random table each run, is not your M.**
+Nine byte-identical dataflow-navigation queries refreshed fine at seven tables, then failed at
+nine with one rotating "root" query blocking the rest (run 1: two dims; run 2: a fact). Static
+state was provably clean — engine partitions correct, zero TMSCHEMA_EXPRESSIONS, dataflow
+document diff-identical to the canonical build, stale cache.abf deleted (still failed) — which
+is the tell: stop diffing and check the KNOWN Desktop bug (community-confirmed, years open)
+where parallel table loading trips a spurious cycle. Per-project fix without touching global
+options: `.pbi\editorSettings.json` → `"parallelQueryLoading": false`. Same refresh then went
+all-State-1 in under a minute. Diagnostic dead ends worth remembering: the refresh-error dialog
+truncates ("N queries are blocked by the following error(s)" + first roots only), and the Traces
+folder does not exist unless diagnostics tracing was enabled beforehand.
+
+**A per-combo GROUP BY over a multi-billion-row snapshot table dies server-side, not client-side.**
+"Microsoft SQL: A severe error occurred on the current command. The results, if any, should be
+discarded" after ~25 min = the server aborting a hash aggregate (here: duplicate-row detection
+grouping ~4.5B rows over 25 months — measured afterwards at 4,484,461,882 rows via the chunked
+version). Fix in the M layer, schema-identical: token the window as `__WINDOW__`, then
+`RunChunk = (MonthStart as date, IncludeUndated as logical) => Value.NativeQuery(Source,
+"<pre>" & WindowSql & "<post>", ...)` over `List.Transform({0..MonthsBack}, ...)` +
+`Table.Combine` — 25 small aggregates instead of one; undated rows ride with chunk 0 via an
+`OR ... IS NULL` appended only there. Deploy by pasting the ONE query in PQ Online: the
+dataflowId, entity schema and native-query approval all survive, no reimport. (Each reimport
+mints a new dataflowId and forces repointing every consumer partition — did that twice; avoid.)
+
+**A locked Windows session still supports most of the verification loop.** `run.it` (launch),
+`wnd.find`, and UI-element `Find`/`Invoke` (clicked the ribbon Refresh) work without the input
+desktop; `Activate`/`ShowMaximized`/`keys.send`/screen-region capture throw
+`InputDesktopException` or shoot the lock screen. Watch completion engine-side instead:
+poll `$SYSTEM.TMSCHEMA_PARTITIONS` states over OleDb until all partitions hit 1, then run the
+acceptance DAX the same way. Only screenshots and Ctrl+S wait for the unlock.
