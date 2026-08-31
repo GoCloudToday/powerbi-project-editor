@@ -1856,3 +1856,27 @@ Side findings:
   report level, zero on the opted-out page.
 - PowerShell gotchas that bit: `(if ...)` inline is not an expression (use `$(if …)`),
   and `blank` is a reserved word inside DAX `EVALUATE VAR`.
+
+### 2026-08-31 (PBIR static resources must be BOM-less; a pre-model dialog leaves an EMPTY workspace DB)
+
+Continuation of the scripted PBIP build: registering the org theme by `Copy-Item` from an
+existing theme JSON made Desktop refuse the whole project open with verbatim: "Cannot read
+'<…>\StaticResources\RegisteredResources\<theme>.json'. Only text with UTF8 encoding without
+BOM (byte order marks) is supported. Detected BOM: 'UTF-8'". `Copy-Item` preserves the source's
+BOM; every PBIR part must be UTF-8 no-BOM. After copying ANY file into a project, sweep all
+text files for `EF BB BF`.
+
+- **Failure signature from outside:** the headless cycle finds a fresh msmdsrv and a catalog,
+  but `TMSCHEMA_TABLES` stays at 0 rows for minutes and the process title is
+  "Untitled - Power BI Desktop" — Desktop abandoned the open at a dialog and fell back to an
+  empty instance. Don't keep polling DMVs blind: capture the interactive desktop
+  (System.Drawing `CopyFromScreen`) and READ the dialog; it names the offending file exactly.
+- **TMSCHEMA DMVs need a database context.** Without `Initial Catalog` (discover it via
+  `$SYSTEM.DBSCHEMA_CATALOGS`) they return 0 rows with no error — a convincing false negative
+  that looks identical to "model not loaded".
+- **Rule 1's boundary confirmed at engine level:** after appending 18 measures per fact table,
+  five relationships and a `summarizeBy` fix (zero partition-M changes), every pre-existing
+  partition came back `State=1` (Ready, cache intact) on the next open; only the hand-cloned
+  new table sat at `State=3` awaiting its first refresh.
+- `TMSCHEMA_MEASURES` with `WHERE [ErrorMessage] <> ''` does not filter (all rows return,
+  messages empty) — filter client-side before declaring "36 measures with errors".
