@@ -1738,6 +1738,42 @@ operator approve once in Power Query Online: Edit tables → open a `Value.Nativ
 "Permission is required to run this native database query" → Edit permission → Run → Save &
 close (that save flips the flag). Refresh before that step fails on every native-query entity.
 
+### 2026-08-27 round 2 (post-import entity-schema loss, and building the consuming PBIP by script)
+
+**An imported dataflow can silently lose ONE entity's `attributes`.** After the import + the
+PQ-Online native-query approval save, `GET /v1.0/myorg/groups/{ws}/dataflows/{id}` showed one of
+seven entities with an EMPTY attributes array — its `shared` M was byte-identical, its refresh
+succeeded and the snapshot CSV materialized, but Desktop's dataflow navigator simply did not
+offer that entity (the operator connected the other six without noticing). Rule: after
+import + approval, re-GET the definition and assert every entity kept its attribute count;
+an empty one is repaired by opening that query in PQ Online (let the preview evaluate) and
+saving again. The consuming model can be built in the meantime — clone a Desktop-authored
+sibling table's TMDL (same 15-column shape), regenerate every `lineageTag`, and swap the
+entity name in the navigation partition; data arrives at the next refresh.
+
+**Scaffold-then-script division of labor that worked.** Operator connects the dataflow entities
+in Desktop and saves an empty-page PBIP; the script side then: (1) clones the missing fact table
+TMDL (`.Replace` on the table name hits the partition's `{[entity="…"]}` navigation too — wanted);
+(2) appends measures at end-of-file (1-tab `measure` blocks after the partition are valid table
+children); (3) appends the missing relationships; (4) generates all pages/visuals from typed
+builders (textbox / dropdown slicer / card / lineChart / pivotTable at visualContainer 2.11.0
+schema — minimal `queryState` role projections + `sortDefinition` are enough, formatting left to
+the theme); (5) registers the org theme by copying a Desktop-authored sibling's
+`resourcePackages` RegisteredResources shape verbatim. Desktop auto-detected only SOME
+fact→dim relationships at scaffold time (3 of 8 — it skips date keys and the second fact),
+and misdetects `summarizeBy: count` on any numeric column whose name contains "Key" — sweep both.
+
+**PowerShell JSON-walker trap: hashtable key shadowing.** In an audit that walks
+`ConvertFrom-Json -AsHashtable` output, `$node.Values` resolves to the JSON KEY literally named
+`"Values"` when present — a pivotTable's `queryState` has exactly that key, so the walker
+recursed only into the Values role and reported every Rows-role field as unbound (8 false
+positives, all matrices, measures fine — that asymmetry is the signature). Property-style
+access on dictionaries prefers keys; method calls are not shadowed — enumerate with
+`$node.GetEnumerator()` (and treat `.Keys`/`.Count` as equally unsafe on arbitrary JSON).
+Audit design that caught real + false errors in one pass: every bound (Entity, Property) must
+exist in a TMDL-derived field inventory, and every `queryRef` string must equal `Entity.Property`
+of a field actually bound in that same visual.
+
 ### 2026-08-28 (per-row access to a NestedJoin's nested column re-evaluates the RIGHT side per row — crashed the machine)
 
 Added a "does this customer have a row in the live ERP feed?" flag to a ~19k-row
