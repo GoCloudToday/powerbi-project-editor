@@ -1953,3 +1953,44 @@ does: keep each cross-dataflow navigation in its **own load-disabled query** (pu
 and put every transformation into a separate **load-enabled computed entity** that references it. The
 builder's validator cannot see this (the M is legal); add a check: load-enabled query text containing
 `PowerPlatform.Dataflows` ⇒ must end at the `{[entity = ..., version = ""]}[Data]` step.
+
+### 2026-09-01 round 3 (duplicate-key refresh failures: the evidence is only in the SOURCE file; offline CSV fidelity to Csv.Document)
+
+A recipients/invitations table is deduplicated in M (remove 5 per-invite volatile columns → `Table.Distinct` →
+`Table.NestedJoin` back to a `Table.Group` of those columns as comma-joined distinct lists) and sits on the ONE side of
+a relationship. The user reported new duplicates on the key for one region. Every queryable copy was clean — the
+live Desktop engine (partition refreshed six weeks earlier) and the published dataset (refreshed months earlier) —
+because a uniqueness violation on the one-side column ROLLS BACK the whole refresh: the offending rows never land
+anywhere you can EVALUATE. The evidence exists only in the current source file.
+
+- **Headless source fetch.** The file lived in a SharePoint document library. Direct SharePoint REST
+  (`_api/web/GetFileByServerRelativeUrl(...)/$value` with an Azure PowerShell token for the SharePoint host) returned
+  **401** — that first-party app has no SharePoint scope. Graph with the same cached Az context worked first try:
+  `GET /v1.0/sites/{host}:/{sitePath}` → `/sites/{id}/drives` (library "Documents") → `/drives/{id}/root:/{folder}/{file}`
+  → `/items/{id}/content` (4.8 MB in seconds, no prompt). Keep the token in-process; never write it to disk.
+- **Reproduce the M parse faithfully.** `Csv.Document(..., Columns=44, QuoteStyle=QuoteStyle.None)` STILL treats
+  quotes as field delimiters-escapes; `QuoteStyle` only decides whether a line break INSIDE quotes continues the
+  field. A naive `Split(",")` misaligned 4,611 of 4,617 rows (every row had a quoted, comma-bearing field) and
+  reported 20 "varying" columns plus 61 phantom keys in a blank region. A per-line quoted-field parser
+  (`Microsoft.VisualBasic.FileIO.TextFieldParser` over a `StringReader` per physical line — so line breaks still end
+  records, matching QuoteStyle.None) reproduced the model's row count exactly.
+- **Diagnostic = per-column distinct count within each key.** Group the parsed rows by the key; for every column
+  count keys with >1 distinct value; split the result by "already in the removal list" vs "kept". Kept columns with
+  variation are the offenders. Here: 83 multi-row keys, all already handled by the 5 removed columns, EXCEPT one
+  integer counter column (`Reminders`) varying on 14 keys (0|2, 1|2) — the sole survivor of `Table.Distinct`. The
+  fix is two list extensions: add the column to `Table.RemoveColumns` / `ExpandTableColumn` and add
+  `{"Reminders", each List.Max([Reminders]), Int64.Type}` to the `Table.Group` aggregates (type must match the
+  TMDL column's `dataType: int64`). Confirm the column has no measure/visual consumers before aggregating it.
+- **Editing discipline held.** Desktop was closed before the edit (`CloseMainWindow`, never `Stop-Process` on the
+  user's live session), both files kept CRLF and no BOM, the anchor-replace refused to write on 0 or >1 matches,
+  TOM `TmdlSerializer::DeserializeDatabaseFromFolder` (ALM Toolkit build) validated the folder, then Desktop was
+  relaunched and the engine polled (all partitions State=1; the changed M just needs the user's refresh).
+- **Two tooling traps.** (1) Windows PowerShell 5.1 reads a BOM-less `.ps1` as ANSI: a path literal with accented
+  characters fails `Start-Process` with "The system cannot find the file specified" — prepend a UTF-8 BOM or run
+  under pwsh 7. (2) Patching a PowerShell script from bash with `sed` inside double quotes eats backtick escapes
+  (`"`r`n"` becomes an empty command substitution) — the replacement silently lost its line break and the whole
+  appended literal; author PS scripts only through single-quoted heredocs and verify the file after every write.
+
+Rule: when a one-side key "has duplicates" but every loaded copy is unique, stop querying engines and diff the
+CURRENT source file with a parse that matches the M options; the offender set is "kept columns with >1 distinct
+value per key", and the fix is always to move them into the aggregate list, never to weaken the relationship.
