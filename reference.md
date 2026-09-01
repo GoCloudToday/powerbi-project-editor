@@ -1939,3 +1939,17 @@ desktop; `Activate`/`ShowMaximized`/`keys.send`/screen-region capture throw
 `InputDesktopException` or shoot the lock screen. Watch completion engine-side instead:
 poll `$SYSTEM.TMSCHEMA_PARTITIONS` states over OleDb until all partitions hit 1, then run the
 acceptance DAX the same way. Only screenshots and Ctrl+S wait for the unlock.
+
+### 2026-09-01 round 2 (Gen1 dataflow import: a load-enabled navigation to another dataflow is a LINKED TABLE)
+
+**"Can't save dataflow — Linked tables can't be modified. Please undo any changes made to the following
+linked tables and try again: {0}"** on importing a hand-built `model.json`. The `{0}` is an unformatted
+placeholder — the dialog never names the offending query. Cause: any **load-enabled** query whose source
+is `PowerPlatform.Dataflows(...)` → workspace → dataflow → entity is classified as a *linked table*, and a
+linked table may consist of the navigation steps only. Both offending queries carried transformations
+after the entity step (one `Table.SelectColumns` + `TransformColumnTypes`; one combining three navigations
+with `Table.Combine`/`SelectRows`/`AddColumn`). Rule, matching what a production Gen1 dataflow already
+does: keep each cross-dataflow navigation in its **own load-disabled query** (pure navigation, `version = ""`),
+and put every transformation into a separate **load-enabled computed entity** that references it. The
+builder's validator cannot see this (the M is legal); add a check: load-enabled query text containing
+`PowerPlatform.Dataflows` ⇒ must end at the `{[entity = ..., version = ""]}[Data]` step.
