@@ -1994,3 +1994,51 @@ anywhere you can EVALUATE. The evidence exists only in the current source file.
 Rule: when a one-side key "has duplicates" but every loaded copy is unique, stop querying engines and diff the
 CURRENT source file with a parse that matches the M options; the offender set is "kept columns with >1 distinct
 value per key", and the fix is always to move them into the aggregate list, never to weaken the relationship.
+
+### 2026-09-02 (enhanced-refresh + incremental-refresh policy: the rules that decide whether an initial load can finish at all)
+
+Rebuilding a large import model (3 facts, ~450M rows) reading the warehouse directly, with a native refresh policy, deployed and
+refreshed **entirely through the REST/Fabric APIs** because the source was reachable only from the service's gateway.
+Everything below was measured against a real capacity.
+
+**Deploying a semantic model from TMDL with `POST /v1/workspaces/{ws}/items`** works (202 + LRO). Trap: a "skip the local
+editor state" filter of the form `-not $_.FullName.Contains('.pbi')` also drops **`definition.pbism`**, and the import fails
+with `Workload_FailedToParseFile … Required artifact is missing in 'definition.pbism'`. Exclude the `.pbi` *directory*
+(`\.pbi\`), not the substring. After creation, `POST .../datasets/{id}/Default.BindToGateway` with the datasource ids of a
+sibling dataset on the same connection binds credentials without any portal step.
+
+**Refresh-policy rules the API enforces, in the order you hit them:**
+1. `applyRefreshPolicy: true` **requires** `commitMode: "transactional"` — `partialBatch` is rejected in under a second
+   (`RefreshApiRequest for table refresh using refresh policy must have the property 'CommitMode' = 'Transactional'`).
+   So an initial policy load is all-or-nothing; the only knobs are `maxParallelism` and `retryCount`.
+2. The policy's `sourceExpression` is validated **textually**: it must contain the literal names `RangeStart` and `RangeEnd`
+   (`Source expression should contain 'RangeStart' and 'RangeEnd' parameter names`). Factoring the window-splicing into a
+   shared M function hides them and the deploy fails — pass them as arguments: `#"Window SQL"(#"Fact SQL", RangeStart, RangeEnd)`.
+3. `type: "clearValues"` with `applyRefreshPolicy: true` completes in ~12 s and creates **no partitions**. A policy is
+   materialised only by a `full` refresh. There is no cheap "create the partitions first" step.
+4. The service cancels any enhanced refresh that runs past **5 hours** (`System timeout expired … Timeout property - '05:00:00'`),
+   and the whole transaction rolls back. Load **one fact table per request** (`objects: [{table: "Orders"}]`) so no single
+   request approaches the cap; each table's partitions still load in parallel inside its request.
+5. `getDefinition` does **not** export policy-generated partitions — the TMDL keeps showing the single template partition.
+   Verify partitions from the refresh record's `objects` and from row counts, never from the exported definition.
+6. A refresh stuck in `Unknown` blocks `updateDefinition` (its LRO just hangs). `DELETE .../refreshes/{requestId}` cancels it;
+   the definition update then succeeds immediately.
+
+**Granularity is a cost decision, not a modelling detail.** A month-grain rolling window over a 2-year history = 25 partitions
+per fact, and each partition query re-scans the full line table (the window is applied through the header join) — 63 such
+queries blew the 5-hour cap. Switching the *rolling* window to **quarter** granularity while keeping the *incremental* window
+at 3 months gives the same daily cost (3 monthly partitions refreshed) with 8 scans per fact for the initial load — the same
+shape the legacy hand-rolled partitions had. Measured after the switch: 195M-row fact 21 min, 63M-row fact 55 min.
+
+**Reproduce the source model's historical projection or your rebuild will be BIGGER than the model it replaces.** The legacy
+model loaded partitions older than 12 months through a "(Historical)" query variant that blanked 21 detail columns
+(`'<Archived>'` / NULL) — the highest-cardinality ones (a document-number column: 38M distinct with the projection, ~55M
+without). Dropping that "simplification" cost ~2 GB and the load failed on `new dataset of size 11634 MB exceeds the limit of
+10240 MB`. Fix without duplicating the query: one `__ARCHIVE__` token in the SQL, spliced per partition
+(`if Date.From(WindowEnd) <= Date.AddMonths(Date.StartOfMonth(DateTime.Date(DateTime.LocalNow())), -12) then "1" else "0"`),
+and `CASE WHEN __ARCHIVE__ = 1 THEN '<Archived>' ELSE col END` — the engine folds the constant. The 10,240 MB ceiling itself
+is lifted by `targetStorageMode: PremiumFiles` (PATCH the dataset), but matching the original's footprint is the real goal.
+
+**Operational note.** `retryCount: 3` on a 2.5-hour query is how a single mistake becomes 8.5 hours of capacity and a mail from
+the platform team. Use 0–1 on the big table, run one table at a time, and `type=clearValues` a failed test model immediately —
+it releases the memory it holds on a shared capacity in ~10 s.
