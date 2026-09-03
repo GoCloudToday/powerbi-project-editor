@@ -2042,3 +2042,38 @@ is lifted by `targetStorageMode: PremiumFiles` (PATCH the dataset), but matching
 **Operational note.** `retryCount: 3` on a 2.5-hour query is how a single mistake becomes 8.5 hours of capacity and a mail from
 the platform team. Use 0–1 on the big table, run one table at a time, and `type=clearValues` a failed test model immediately —
 it releases the memory it holds on a shared capacity in ~10 s.
+
+### 2026-09-03 (porting M to SQL: two semantic traps a value-diff finds and a schema check never will)
+
+Parity-testing a fact table ported from Power Query M + DAX calculated columns to native SQL, on a 208M-row table.
+
+**1. `Number.Round` in M is NOT banker's rounding.** M defaults to `RoundingMode.Up` (half away from zero); .NET's `Math.Round`
+defaults to ToEven, and a "faithful" port that reproduces banker's rounding is therefore wrong. T-SQL `ROUND()` already has M's
+semantics — a plain `ROUND(x, 0)` is the correct port. **How it shows up in a diff:** compare the MARGINAL distribution of each
+bucketed column, not just the multi-column cells. A rounding-mode mismatch appears as *adjacent buckets swapping near-identical
+counts* at exactly the .5 boundaries — measured here: `<=0`↔`0-1` 311,419 rows, `1-2`↔`2-5` 61,000, `5-10`↔`10-25` 28,000, while
+the row total matched to 591 rows in 208M. Columns whose ratio rarely lands on .5 (or is an integer) match perfectly, which is why
+a single 3-way cell comparison looked like scattered ±5% noise and hid the real, systematic cause.
+
+**2. A calculated column's `CALCULATE` does a context transition — so a "constant" lookup may be per-entity.** A column defined as
+`VAR t = CALCULATE(AVERAGE(Targets[Value]), Targets[Id] = "X")` on a 60M-row fact does NOT read one global average: the row's
+filter context propagates fact → dimension → (bidirectional relationship) → bridge → targets, so each row gets ITS OWN entity's
+target. Porting it as one spliced constant moved 150,448 rows out of one bucket combination (92% of it). Before porting any
+calculated column that references another table, walk the relationship path for bidirectional hops; if the lookup table is reached,
+the value is contextual and the column must stay DAX (or the SQL must join the lookup per key — impossible when the lookup arrives
+from a different source system, as here).
+
+**Harness trap that hides both.** `executeQueries` names grouping columns TABLE-QUALIFIED (`Calendar[Month Key]`) and measures bare
+(`[Order - Orders]`). A comparison harness with a hand-written key list that omits the table prefix matches no property, every row
+collapses into a single bucket, only the last row of each result survives, and the diff reports a handful of differences on what is
+actually a broken comparison. Derive keys structurally instead: a property starting with `[` is a measure (a value), anything else
+is a grouping column (a key).
+
+**Compare over a window BOTH models share.** The rebuild's partitions were quarter-aligned and therefore ~2 months wider than the
+original's month-aligned window, and the original had not refreshed as recently — so an unfiltered aggregate differs for two
+reasons that have nothing to do with the port. Filtering both sides to `[common start, start of current month)` turned a noisy
+"everything differs a bit" into "24 of 25 months match exactly, and here are the two real defects".
+
+**Windows must agree between facts and dimensions.** With a policy-driven fact window at quarter granularity, dimension queries
+windowed at month granularity are NARROWER — the first quarter's facts then reference dimension rows that were never loaded and land
+on blank members (76 fact rows, 6,955 dangling keys here). Align the dimension limit to the same granularity (`Date.StartOfQuarter`).
