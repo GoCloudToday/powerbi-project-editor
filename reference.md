@@ -2077,3 +2077,5 @@ reasons that have nothing to do with the port. Filtering both sides to `[common 
 **Windows must agree between facts and dimensions.** With a policy-driven fact window at quarter granularity, dimension queries
 windowed at month granularity are NARROWER — the first quarter's facts then reference dimension rows that were never loaded and land
 on blank members (76 fact rows, 6,955 dangling keys here). Align the dimension limit to the same granularity (`Date.StartOfQuarter`).
+
+**Correction to the entry above (same day, measured):** T-SQL `ROUND()` is only reliably half-away-from-zero for DECIMAL/NUMERIC. On a FLOAT argument it rounds ties to even - `ROUND(CAST(0.5 AS float), 0)` returned 0 on the server under test, reproducing the very defect it was meant to fix. Port Ms `Number.Round` as `SIGN(x) * FLOOR(ABS(x) + 0.5)` instead; it is unambiguous for both signs and needs no assumption about the providers float behaviour.
