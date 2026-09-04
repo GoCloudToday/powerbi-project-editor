@@ -2079,3 +2079,13 @@ windowed at month granularity are NARROWER — the first quarter's facts then re
 on blank members (76 fact rows, 6,955 dangling keys here). Align the dimension limit to the same granularity (`Date.StartOfQuarter`).
 
 **Correction to the entry above (same day, measured):** T-SQL `ROUND()` is only reliably half-away-from-zero for DECIMAL/NUMERIC. On a FLOAT argument it rounds ties to even - `ROUND(CAST(0.5 AS float), 0)` returned 0 on the server under test, reproducing the very defect it was meant to fix. Port Ms `Number.Round` as `SIGN(x) * FLOOR(ABS(x) + 0.5)` instead; it is unambiguous for both signs and needs no assumption about the providers float behaviour.
+
+**`applyRefreshPolicy: true` refreshes ONLY the incremental window — a query change never reaches history.** Measured the hard
+way: after correcting the fact SQL and pushing the definition, a `type=full, applyRefreshPolicy=true, objects=[{table}]` refresh
+completed in 46 min and reported success, yet every check against an older month returned byte-identical numbers. That is the
+policy working as designed — it re-queries the last N incremental periods and leaves the historical partitions as they are. The
+model then holds a MIX: recent partitions produced by the new query, historical ones by the old. Verifying a query fix against a
+historical month therefore "proves" the fix did nothing. To propagate a SQL/M change across the whole window, refresh with
+`applyRefreshPolicy: false` (with `objects: [{table: "<fact>"}]`), which re-queries every existing partition; keep
+`applyRefreshPolicy: true` for the daily run and for growing/dropping the window. Corollary for verification: always check a
+partition INSIDE the incremental window and one OUTSIDE it — agreement on both is what proves a fix landed everywhere.
