@@ -2108,9 +2108,8 @@ against two published models of ~200M rows each.
    own app registration. So: connect with **no credentials in the connection string** and let ADOMD prompt; the window must be
    real (`Start-Process powershell.exe -WindowStyle Normal` — a hidden process fails with "user interface is not available").
    One sign-in covers several databases in the same process.
-3. **Use a recent ADOMD build.** The client shipped with an older management-studio install exposes no `AccessToken` property at
-   all (`[AdomdConnection].GetProperties().Name -contains 'AccessToken'` → False); the one shipped with the VertiPaq-analyzer
-   GUI was assembly 19.84 and has it. Check before assuming.
+3. **Use a recent ADOMD build.** The ADOMD client shipped with an older SSMS install exposes no `AccessToken` property at
+   all (`[AdomdConnection].GetProperties().Name -contains 'AccessToken'` → False); the one shipped with DAX Studio (`C:\Program Files\DAX Studio\bin`) was assembly 19.84 and has it. Check before assuming.
 4. **ADOMD needs Windows PowerShell 5.1.** Under pwsh 7 `Open()` throws
    `Could not load type 'System.Runtime.Remoting.Messaging.CallContext' from assembly 'mscorlib'`.
 5. **Preload the client folder's assemblies; do not use a lazy `AssemblyResolve` handler.** The obvious handler
