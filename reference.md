@@ -2141,3 +2141,75 @@ size and the trimming decisions write themselves.
 
 Last caveat: the size in the service's `dataset of size N MB exceeds the limit` error is the STORED size, a different number
 from this in-memory footprint. Do not compare them.
+
+
+### 2026-09-04 round 2 (visual-level parity of rebound reports from PBIR queryState, and what an adversarial second-model review overturned)
+
+After rebuilding a large import model from its SQL sources, the reports were rebound and the question became "does every
+visual show the same numbers". Measured on three reports (805 visuals) against a ~200M-row production model and its rebuild.
+
+**The harness (works, ~2 h wall-clock for 116 queries x 2 models).** Walk `definition/pages/*/visuals/*/visual.json`, read
+`visual.query.queryState.<role>.projections[].field`: `Column` -> a `SUMMARIZECOLUMNS` grouping column, `Measure` -> a value,
+`Aggregation{Expression, Function}` -> `SUM/AVERAGE/...(col)`; skip `HierarchyLevel`, `NativeVisualCalculation`, `Arithmetic`.
+Emit `EVALUATE TOPN(300, SUMMARIZECOLUMNS(cols, <window filter>, "v1", m1, ...), col1, ASC, ...) ORDER BY cols` - every grouping
+column in the order clause, so the 300-row cap is deterministic. De-duplicate the query TEXT before running (805 visuals ->
+348 with data -> 116 distinct). Run the identical text on both models over REST `executeQueries`; split keys from values by the
+column-name shape (`Table[Col]` = key, `[v1]` = value) - never by a hand-written list. Diff per key with a relative tolerance.
+
+Six traps, each cost a re-run:
+1. **A `SUMMARIZECOLUMNS` with no value expression IGNORES its filter-table argument for a related table.** Measured:
+   `SUMMARIZECOLUMNS('Fact'[Town], FILTER(ALL('Calendar'[Month Key]), ...))` returned 446,432 towns (= all history) on both
+   models; adding `"n", COUNTROWS('Fact')` returned 310,250. So every slicer query silently compared FULL histories, where the
+   two models differed by design (wider window, archive cutoff lagging a quarter), and 12 of 31 "DIFFERS" verdicts were about
+   the harness, not the model. Always add a row-count value to measure-less queries.
+2. **`Diff` is a built-in alias of `Compare-Object`, and aliases beat functions.** A helper named `Diff` never ran; its two
+   arguments went to `Compare-Object` and the output was a puzzling `InputObject` table. Name helpers `CmpModels`, not `Diff`.
+3. **`pwsh -File script.ps1 -Ids Q1,Q2` binds a `[string[]]` parameter as ONE string** ("Q1,Q2"); use
+   `pwsh -Command "& ./script.ps1 -Ids @('Q1','Q2')"`.
+4. **Export the inventory BEFORE applying a partial-run filter.** An `-OnlyIds` re-run rewrote `queries.csv` with 3 rows; the
+   coverage analysis that read it later reported 0 exercised objects. Downstream files must not depend on run mode.
+5. **Field-parameter / composite-key calc tables reject a single grouped column** ("Column [X] is part of composite key, but
+   not all columns of the composite key are included"). Compare them with `SELECTCOLUMNS('T', ...)` over the whole table
+   (5-50 rows) instead of bending the generator.
+6. **PBIR `Aggregation.Function` 5 is `CountNonNull` = a ROW count (`COUNTA`), not a distinct count**; 2 = `DistinctCount`
+   excludes blanks (`DISTINCTCOUNTNOBLANK`). A wrong map still MATCHES on both sides - vacuously. Also render `null` keys
+   distinctly from `""` or two rows collapse into one bucket.
+
+Coverage limits worth stating in the write-up: visual/page/report filters and RLS are not applied; 20-column detail tables
+with a disconnected selector table in the grouping exceed the query memory governor / 225-s REST timeout on BOTH models
+even for a single day - cover their columns with per-month aggregates of every column plus the full line detail of ONE
+document, and list which columns no runnable query exercises (regex the DAX for `'T'[C]` / `[M]` tokens across the queries
+that ran).
+
+**Finding 1 - a lead-time calculation whose calendar lookup is bounded by the PARTITION window is wrong at every edge.**
+The working-day lead time subtracts non-working days read from a country calendar; the calendar subquery carried the same
+`>= RangeStart AND < RangeEnd` as the fact. An order shipped just after a partition edge cannot see the weekend/holidays
+before it, so a delay made only of non-working days counts as working days -> classified Late. Signature: over a 335-day scan
+the KPI differed ONLY on days 1-5 after an edge, with identical header counts; the bucket table for one edge day showed
+1,699 of 30,450 headers moving `+1/+2 days Late` -> `0 days On Time`, every other bucket identical. The ORIGINAL model had
+the bug too (its edges are 3-month windows recomputed from `LocalNow()` at each refresh, so its wrong days MOVE every month
+and get re-queried); the rebuild with `rollingWindowGranularity: quarter` + `incrementalGranularity: month` has edges at
+every quarter start AND every month start inside the incremental window, and a monthly partition that merges into a quarter
+partition is NOT re-queried - the edge error is frozen into history. Fix: give the lookup its own window, padded 45 days
+each side of the partition (`__WD_START__`/`__WD_END__` tokens filled next to the range tokens); the extra calendar rows
+produce NULL day flags and cannot double count. Rule: **any per-row calculation that reads a second table must not inherit
+the fact's partition window** - audit every `RangeStart` occurrence in a partitioned query, not just the fact's own WHERE.
+
+**Finding 2 - an exactness test ported to float drifts.** "Highest pack level whose ratio divides the quantity exactly" was
+M `q / r = Number.Round(q / r)`; M arithmetic on decimal-typed source columns is decimal-precision. The SQL port
+`CAST(q AS float) / CAST(r AS float) = FLOOR(...)` misses exact decimal quotients: for one month with identical row counts
+(11,962,504) only 26 lines changed level, but they were large lines, so every "quantity at level n" card moved ~0.035 %
+in every month - which the first draft had filed as refresh lag. Signature: per-level LINE counts shift by tens while
+per-level QUANTITIES shift by hundreds of thousands. Port divisibility as
+`CAST(q AS decimal(38,18)) % CAST(r AS decimal(38,18)) = 0`.
+
+**Review discipline.** An adversarial second-model review (different model family, told to break each claim, given the
+REST recipe and read-only dataset ids) overturned two conclusions and one premise in ~40 minutes: (a) "the rebuild is right
+wherever it differs" (it had its own frozen edges), (b) "these card differences are refresh lag" (float port), (c) "same
+window on both sides" (trap 1). What made the difference was METHOD, not effort: a bucket-signature diff keyed by
+(event date, reference date) instead of a per-day KPI threshold (the 0.5 pp threshold hid weekday edges with a few
+hundred orders); per-first-character fingerprints (count, sum of lengths, sum of character codes) instead of
+distinct-count equality; and reading the ORIGINAL model's partition generator instead of assuming "monthly". Also two
+cosmetic-but-visible things only a reviewer noticed: the VertiPaq dictionary keeps the FIRST-SEEN casing of a text value
+(`ANYTOWN` vs `Anytown` in slicers), and an archive projection decided per quarter partition lags a month-precise rule
+by up to a quarter. Ask for the review before writing "parity proven".
