@@ -2089,3 +2089,56 @@ historical month therefore "proves" the fix did nothing. To propagate a SQL/M ch
 `applyRefreshPolicy: false` (with `objects: [{table: "<fact>"}]`), which re-queries every existing partition; keep
 `applyRefreshPolicy: true` for the daily run and for growing/dropping the window. Corollary for verification: always check a
 partition INSIDE the incremental window and one OUTSIDE it — agreement on both is what proves a fix landed everywhere.
+
+### 2026-09-04 (measuring a PUBLISHED model's VertiPaq footprint from a script — six traps between you and the number)
+
+"How big is this model, and which columns cause it" is the first question of any trimming job, and the tooling answer
+(DAX Studio's VertiPaq Analyzer) is a GUI. Doing it from a script is possible but every step has a trap. Measured end to end
+against two published models of ~200M rows each.
+
+1. **The REST `executeQueries` API rejects EVERY `INFO.*` function on some datasets** — not just the security ones. Measured:
+   `INFO.STORAGETABLECOLUMNSEGMENTS()`, `INFO.STORAGETABLES()`, `INFO.PARTITIONS()` **and `INFO.TABLES()`** all return
+   `DatasetExecuteQueriesError` whose only detail is the useless string `Failed to execute the DAX query.` Ordinary
+   `EVALUATE SUMMARIZECOLUMNS(...)` over the same dataset works fine, so this is a function-class restriction, not a permission
+   or a syntax problem. Conclusion: the storage DMVs are unreachable over REST; XMLA is the only route.
+2. **XMLA refuses an Azure-PowerShell user token.** `Get-AzAccessToken -ResourceUrl 'https://analysis.windows.net/powerbi/api'`
+   produces a token with the correct `aud`, `tid` and `upn`, and it drives the whole REST surface — but the XMLA endpoint answers
+   `Authentication failed for all authenticators`, both when set on `AdomdConnection.AccessToken` and when passed as
+   `User ID=;Password=<token>` in the connection string. DAX Studio succeeds because it does an *interactive* sign-in under its
+   own app registration. So: connect with **no credentials in the connection string** and let ADOMD prompt; the window must be
+   real (`Start-Process powershell.exe -WindowStyle Normal` — a hidden process fails with "user interface is not available").
+   One sign-in covers several databases in the same process.
+3. **Use a recent ADOMD build.** The client shipped with an older management-studio install exposes no `AccessToken` property at
+   all (`[AdomdConnection].GetProperties().Name -contains 'AccessToken'` → False); the one shipped with the VertiPaq-analyzer
+   GUI was assembly 19.84 and has it. Check before assuming.
+4. **ADOMD needs Windows PowerShell 5.1.** Under pwsh 7 `Open()` throws
+   `Could not load type 'System.Runtime.Remoting.Messaging.CallContext' from assembly 'mscorlib'`.
+5. **Preload the client folder's assemblies; do not use a lazy `AssemblyResolve` handler.** The obvious handler
+   (`probe the folder for $e.Name`) recurses and the process dies with `Process is terminated due to StackOverflowException` —
+   no catchable error, no output. `foreach($f in Get-ChildItem $dir -Filter *.dll){ try { [void][Reflection.Assembly]::LoadFrom($f.FullName) } catch {} }`
+   is boring and works.
+6. **Read the DMV with a manual reader loop.** `$dataTable.Load($reader)` throws
+   `Failed to enable constraints. One or more rows contain values violating non-null, unique, or foreign-key constraints` —
+   DMV output has nulls and duplicate keys. Iterate `while($r.Read())` and project the columns you want.
+
+Plus the PS 5.1 encoding trap that swallowed a whole run: **a script file written as UTF-8 WITHOUT BOM is read as ANSI by
+PowerShell 5.1**, so any non-ASCII character in an output path becomes mojibake, every file write silently targets a
+non-existent directory, and the errors vanish with the console window. Write the script with a BOM, or keep every path ASCII
+(a Windows 8.3 short path is a convenient escape).
+
+**The measurement itself:** total = `SUM(USED_SIZE)` over `$SYSTEM.DISCOVER_STORAGE_TABLE_COLUMN_SEGMENTS` (data + hierarchies)
+plus `SUM(DICTIONARY_SIZE)` over `$SYSTEM.DISCOVER_STORAGE_TABLE_COLUMNS`. When diffing two models, note that `COLUMN_ID` carries
+an internal numeric suffix (`My Column (195404)`) that differs per model — strip `\s*\(\d+\)$` before joining or every column
+appears to have vanished.
+
+**What it showed, and why the exercise was worth it.** Rebuild vs original, same reports, same grain: total
+30,451 MB → 25,463 MB (−16.4 %), of which the **dictionaries fell 41 %** (8,216 → 4,839 MB) — the rebuild was *smaller while
+holding a wider date window*. Two causes dominated, and neither is visible in a row count: reproducing the original's
+historical-detail projection (blanking high-cardinality text on partitions older than 12 months) cut one document-number column
+from 2,677 MB to 1,617 MB and its POS_TO_ID/ID_TO_POS index pair from 1,572 MB to 880 MB; and dropping key columns no report
+used removed 1,166 MB outright (six unused `Calendar*DateID` foreign keys and two lead-time measures superseded by their
+interval buckets). **Dictionary size, not row count, is where an import model's memory goes** — sort the per-column output by
+size and the trimming decisions write themselves.
+
+Last caveat: the size in the service's `dataset of size N MB exceeds the limit` error is the STORED size, a different number
+from this in-memory footprint. Do not compare them.
