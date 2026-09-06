@@ -2326,7 +2326,7 @@ per-batch component, while the material and overhead components were three order
 magnitude larger per unit than every genuine per-unit component. Root cause, two layers: upstream, a **per-batch cost divided
 by a lot size that defaults to 1 when missing** (`if null or 0 then 1`); in the model, that per-unit figure
 **multiplied by line quantity** like a genuine per-unit cost. **Rule: when a graft reproduces a donor to the
-franc and the number is still absurd, the defect is inherited — prove parity, then report it as a red flag with
+cent and the number is still absurd, the defect is inherited — prove parity, then report it as a red flag with
 the client wording, and do not "fix" it inside the clone.** Two keys accounted for 96.5% of the damage, which is
 what makes the top-N extract the right first move.
 
