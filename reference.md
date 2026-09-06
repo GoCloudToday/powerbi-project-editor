@@ -2213,3 +2213,125 @@ distinct-count equality; and reading the ORIGINAL model's partition generator in
 cosmetic-but-visible things only a reviewer noticed: the VertiPaq dictionary keeps the FIRST-SEEN casing of a text value
 (`ANYTOWN` vs `Anytown` in slicers), and an archive projection decided per quarter partition lags a month-precise rule
 by up to a quarter. Ask for the review before writing "parity proven".
+
+### 2026-09-05 (cloning a model onto its own cache, clean-cut retire + verbatim graft, and what the parity harness taught)
+
+One model was rebuilt as a sibling of another: copy model A whole, delete one feature family from it
+(86 measures, 9 fact columns, 1 table), graft another model's feature stack into it verbatim (87 objects
++ one shared expression), add an 11-measure completion set, then prove by measurement that (i) nothing
+else moved versus A and (ii) the grafted stack computes exactly what the donor computes. 31 tables,
+168 measures at the end. Everything below is from that run.
+
+**1. A PBIP can be cloned onto its own `cache.abf` — copy the model folder MINUS `.pbi\localSettings.json`.**
+That one file pins the published `datasetId`, so copying it makes the clone publish over the original's
+dataset. Give the clone fresh `logicalId`s (`.platform` files) and leave every partition's M text
+byte-identical, and the copied cache is accepted on the first open: measured 30 of 31 partitions came back
+`State 1` (Ready) with no refresh, and only the newly grafted table sat at `State 3` (NoData). One
+right-click refresh of that table (its rows came from a dataflow, so it is not headless-refreshable) took
+the cache from 133 MB to 151 MB and finished the model. **Rule: reuse the cache — a full reload of a
+multi-hundred-MB model to add one table is wasted hours, and byte-identical partition M is the whole
+precondition.** Corollary: audit your edit scripts for any partition-touching change before trusting it.
+
+**2. Count-only readiness polling is unsafe when the restored cache has the SAME table count as the new
+schema.** Desktop restores the OLD schema from `cache.abf` first, then applies the definition — so a poll
+that waits for "N tables visible" can fire on the stale schema and every subsequent check runs against the
+wrong model. Here both caches held 31 tables (one table removed, one added), so the count never
+discriminated. Fix: poll for table NAMES — a `-MustHave` list and a `-MustNotHave` list — and print
+`missing:` / `lingering:` so the transcript shows what the poll actually saw.
+
+**3. A "zero added lines" proof via `diff` + `grep -c "^>"` is invalid on multi-10k-line JSON embedded in
+TMDL.** The linguistic-metadata (culture) file is one enormous JSON blob; GNU diff's default heuristics
+reported **11,106 phantom added lines** on a pure-deletion edit, while `diff --minimal` on the same pair
+reported **1** (the single in-place edit the plan itself mandated). Do not gate a deletion on an added-line
+count. Use a **line-subsequence proof** instead: assert that the new file's lines are a strict subsequence
+of the old file's lines (plus an explicit whitelist of intended in-place edits). It is stronger, and immune
+to diff heuristics.
+
+**4. Desktop writes doubles in `diagramLayout.json` with .NET "R" formatting** — shortest round-trippable,
+15 significant digits, falling back to 17. `json.dumps` alone does not reproduce it, so a byte-exact
+round-trip guard fires on a file you only meant to delete one node from. Keep the guard (it is what caught
+this) and give the serializer a custom float formatter: try 15 significant digits, parse it back, and use 17
+if it does not round-trip.
+
+**5. The TMDL `cultureInfo` keyword is rejected by TOM builds up to at least 19.74** — the newest build
+available locally, shipped with Tabular Editor 2 — with `UnsupportedObjectType`. Desktop writes that keyword.
+So the offline `TmdlSerializer::DeserializeDatabaseFromFolder` gate needs either TOM ≥ 19.84, or a
+**temp-copy shim** that rewrites `cultureInfo` → `culture` in a throwaway copy and parses that (never the real
+files). Make the copy fail-closed — a silently-failed copy turns the gate into a no-op. The shim's blind spot
+is culture-specific grammar, so the headless Desktop open stays the authoritative load check.
+
+**6. Never trust a name-based delete list — run the consumer closure to a fixpoint.** The retire set was
+authored by naming conventions and came to 78 objects. Running a dependency closure over it (every measure
+whose DAX references a retired object, iterated until nothing new appears) surfaced **8 more measures**:
+thin `SUM()` wrappers named exactly like the fact columns being retired, which the name rule had classified
+as "keep" precisely because they matched a column name rather than a measure name. Final set 86, and all 8
+were genuinely dead. **78 → 86 is a 10% miss on a hand-authored list.**
+
+**7. A block-splitting checker must own doc comments the way the serializer does.** The independent auditor
+split table files at `^\t(measure|column|partition|…)` headers only, so a `\t///` doc-comment line attached
+to the **preceding** block. That is harmless until Desktop's save **re-orders inserted measure blocks**: a
+grafted measure that used to be followed by the next measure's doc comment no longer is, and a byte-comparison
+against the donor fails on a measure whose own text is character-for-character identical. Measured on the
+re-ordered file: `old bytes 12457 == new bytes 12457`, line multiset equal, block multiset equal, only the
+ORDER changed — one false `FAIL … byte-identical`. Fix: walk each block's start backwards over consecutive
+`\t///` lines before comparing. Verified it did not weaken the check with a mutation test on a scratch replica
+(flip one character inside the measure's DAX → `AUDIT FAIL (1 failures, 262 passes)`; unmutated →
+`AUDIT PASS (0 failures, 263 passes)`).
+
+**8. What Desktop's save does to a hand-grafted model — re-diff before any further hand edit.** Measured on
+one save after a graft: (a) **measure blocks re-ordered** within a table file, content unchanged (see 7);
+(b) **~220 culture lines rewritten and the file got SHORTER** (48,866 → 48,646 lines) — Desktop *removed*
+`"State":"Suggested"` synonym terms sourced from its own visual-rename agent, 19 entity definitions touched,
+no `Definition`/`Binding` changed, entity and relationship counts identical; (c) in the report folder, trailing
+newlines stripped and **unreferenced `RegisteredResources` deleted** along with their `resourcePackage` entry.
+None of it is data loss, all of it moves bytes your next diff will attribute to yourself.
+
+**9. Parity harness for FX-converted measures: a NaN-vs-NaN comparison passes vacuously.** Every measure of the
+shape `SUMX(fact, … / IFERROR(LOOKUPVALUE(rate, currencyDim[Currency], SELECTEDVALUE(currencyDim[Currency],
+BLANK()), date), 0))` returns **NaN** when no single currency is in filter context — `LOOKUPVALUE` with no match
+returns **BLANK**, so `IFERROR` never fires and the divisor is blank — and again on rows with a blank date. In
+the first gate run **20 of 111 measures (1,027 of 6,132 rows: 969 NaN, 57 Infinity, 1 −Infinity)** were
+non-finite on BOTH sides, and a naive comparator either called them all "differ" (`nan - nan` is `nan`, so
+`abs(x-y) <= tol` is False) or, once fixed to compare non-finite values as strings, called them "identical"
+with zero discriminating evidence. **Rule: (a) keep non-finite values as strings so `NaN == NaN` compares
+equal, (b) re-run the affected measures with ONE currency pinned via `TREATAS({"XXX"}, currencyDim[Currency])`,
+(c) count non-finite cells and REQUIRE 0 in that run, (d) report coverage explicitly — how many verdicts are
+numerically verified vs undefined-on-both-sides.** The pinned re-run here returned 20/20 identical with
+md5-identical CSVs. 12 cells stayed NaN even with a currency: rows with a blank date, where the rate lookup has
+nothing to match — a real backlog item (`DIVIDE(…, …, BLANK())`), not a parity failure.
+
+**10. A fingerprint key must contain EVERY grouping column.** The gate first ran at
+`SUMMARIZECOLUMNS(dim[A], date[Year], …)` and keyed rows on (measure, scope, A, year). Re-run at the finer
+grain the spec actually asked for, `SUMMARIZECOLUMNS(dim[A], date[Year], date[YearMonth], …)`, the same
+**48,686 rows collapse to 6,141 distinct keys** under the old key — i.e. 87% of the comparison would have been
+last-writer-wins. Derive the key from the query's grouping list, never from a hand-written tuple. (Also worth
+stating in the write-up: 48,686 rows is 7.9× the year-grain 6,132, not the ~12× a naive month multiplier
+suggests — `SUMMARIZECOLUMNS` returns only non-empty combinations.)
+
+**11. Teardown hazard: `Stop-Process` filtered on `-notin $before` kills the USER's Desktop.** Four drivers
+ended with `Get-Process PBIDesktop | ? { $_.Id -notin $before } | Stop-Process -Force`, where `$before` is
+**asserted empty** at launch ("refuse to run while a Desktop is open"). "Not in an empty set" means *every*
+Desktop on the machine — so a Desktop the user opened during a 90-second query phase would have been
+force-killed at teardown. Fix: capture the PIDs the script itself launched into `$myPids` (refresh it on every
+poll, so a load timeout still tears down what you started, and stop refreshing once loaded) and stop only those;
+log the PIDs you killed.
+
+**12. A cost-defect signature worth recognising: 0.046% of rows carrying the entire negative margin.**
+**260 of 569,557 rows (0.046%)** carried more than the whole aggregate margin: the company-level margin was
+negative and larger in magnitude than the positive sales total, and excluding those 260 rows flipped it positive. Diagnosis that worked, in order:
+(a) `TOPN` outlier extract of (key, quantity, sales, every component column) — the signature is **huge Quantity ×
+tiny Sales**; (b) decompose ONE line to the cent — here 99.96% of the direct-labour subtotal was a single
+per-batch component, while the material and overhead components were three orders of magnitude smaller;
+(c) compare the per-unit component values across products — the offending component was two to three orders of
+magnitude larger per unit than every genuine per-unit component. Root cause, two layers: upstream, a **per-batch cost divided
+by a lot size that defaults to 1 when missing** (`if null or 0 then 1`); in the model, that per-unit figure
+**multiplied by line quantity** like a genuine per-unit cost. **Rule: when a graft reproduces a donor to the
+franc and the number is still absurd, the defect is inherited — prove parity, then report it as a red flag with
+the client wording, and do not "fix" it inside the clone.** Two keys accounted for 96.5% of the damage, which is
+what makes the top-N extract the right first move.
+
+**13. The same-calendar-day rule for fingerprints held.** Date tables that bake `TODAY()` into flags
+(a completed-month flag, current-year / prior-year flags) make a fingerprint valid only against another run on the same calendar day; both sides
+of every gate here ran back-to-back. Budget for it: **1.3–1.6 min per model** for 111 measures × 2 queries each
+(a `ROW()` grand total and a `SUMMARIZECOLUMNS`), including a ~25 s model load and a 30 s settle — far cheaper
+than the "10–30 min" a plan will guess, so there is no excuse for sampling instead of running the full set.
