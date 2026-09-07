@@ -2335,3 +2335,87 @@ what makes the top-N extract the right first move.
 of every gate here ran back-to-back. Budget for it: **1.3–1.6 min per model** for 111 measures × 2 queries each
 (a `ROW()` grand total and a `SUMMARIZECOLUMNS`), including a ~25 s model load and a 30 s settle — far cheaper
 than the "10–30 min" a plan will guess, so there is no excuse for sampling instead of running the full set.
+
+### 2026-09-06 (a per-batch cost divided by a defaulted lot size — and the wrong "right" field)
+
+A manufactured-cost rollup inside a dataflow charged a **per-batch** setup cost to **every unit**, because
+it divided the per-lot amount by a lot size the ERP defaults to 1 whenever nobody maintains it. Fixing it
+took two deployment rounds: round 1 picked a plausible-looking quantity field, refreshed cleanly, and moved
+the total by **0.24 %**. Everything below is from that diagnosis, that miss, and the round that worked.
+
+**1. A per-batch cost divided by a defaulted lot size charges the whole batch to every unit — and the
+signature is unmistakable.** The costing lot size on the released-product record defaults to 1, so a rollup
+written as `perLotCost / lotSize` with `if null or 0 then 1` silently becomes `perLotCost` per unit. Three
+things to look for, in order: (a) **0.05 % of fact rows carry the entire negative margin** (260 of 569,557
+here; excluding them flipped the company total positive); (b) on those rows the offending component's
+**cost per unit is orders of magnitude above the selling price per unit** (one item: setup 249.84 per unit
+against a 0.48 selling price), while every genuinely per-unit component is sane; (c) in the cost table
+itself, the lot-size column is **1 on ~42 % of the rows carrying that component** (4,265 of 10,113). (c) is
+the cheapest check of the three and it is a *distribution* check, not a null check — a defaulted 1 is not
+missing data. This extends §2026-09-05 learning 12, which covers the diagnosis; this entry is the fix side.
+
+**2. Test the source system's OWN figure before assuming it shares the defect.** The instinct after finding
+an absurd reconstructed cost is to conclude the ERP's master data is wrong. It was not: the ERP's active
+cost price for the worst item stated a unit cost of **0.36** against the reconstruction's **250** — a 694×
+gap on a 0.48 selling price. That single comparison reframed the whole problem: the ERP calculates the cost
+price **over a stated quantity** and bakes the per-batch charge across exactly that many units, so it never
+divides by the defaulted field at all. The fix was therefore "find and use the quantity the ERP itself
+divided by", not "repair thousands of master-data records". **Rule: before proposing an upstream data
+cleanup, pull the source system's own computed figure for the worst offender and compare. If it is sane,
+the defect is in your reconstruction and there is a field that proves it.**
+
+**3. Profile a candidate field's VALUES on a real export before wiring it in — existence and a plausible
+name prove nothing.** Two quantity fields sit side by side on the same price record and both read like a
+lot size:
+
+| Candidate | What it actually is | Value distribution on 6,345 active price rows |
+|---|---|---|
+| the **charges quantity** | the *misc-charges* quantity | `0` on 4,743 and `1` on 1,570 — **99.5 % of rows carry no lot-size information at all** |
+| the **price quantity** | the BOM **calculation** quantity | **> 1 on 1,920 rows (30 %)**, values up to 104,400 |
+
+Round 1 divided by the charges quantity. It was verified to exist, to be typed `number`, and to be present
+on the entity — and it was the wrong field. Deployed, the fix moved the total by **−0.24 %** and left every
+top offender unchanged. Round 2 divided by the price quantity: **−98.65 %**, both top offenders resolved
+(one from 53 % of all setup to 0.16 %), and 80.2 % of the component's rows changed amount versus 1.4 % in
+round 1 — *that* ratio is how you tell a rule reached the amounts. **Rule: for any field you are about to
+divide by, run a value histogram over a real export first — count of nulls, count of the default value,
+count of > 1, min/median/max — and paste it into the change record. A schema check cannot distinguish the
+right field from the wrong one when both exist and both are numeric.**
+
+**4. When the defect IS a default value, never accept that value under any condition.** Round 1 kept an
+escape hatch: accept `quantity = 1` when the fixed-charges amount is > 0, on the reasoning that a real
+single-unit batch should still be costed. Measured after deployment, **61.8 % of the surviving defect came
+through that one clause** — the fix was authorising division by 1, the exact thing it existed to stop.
+Write the rule as a precedence of *strictly-greater-than-the-default* candidates ending in an explicit
+exclusion, never in a fallback: `fieldA > 1 → fieldB > 1 → fieldC > 1 → exclude the component, null the
+lot size, emit a warning`. Excluding is the right terminal branch: it converts an unbounded over-statement
+into a bounded, *measurable* under-statement (here the aggregate reconstruction landed **9.3 % below** the
+ERP's own cost proxy, and the excluded population is enumerable as a master-data work list). **Any `else 1`
+in a divisor is a defect waiting to be re-shipped.**
+
+**5. Verify a fix per entity against the source of truth, and read the top-N offenders' rule-source label
+before believing the total.** The acceptance query compared, **per product**, the reconstructed unit cost
+against the ERP's own unit cost and counted products into ±10 % / ±25 % / beyond bands: **2,374 products =
+33.6 % of the amount within ±10 %, 1,138 = 25.5 % within ±25 %, 1,317 = 40.9 % beyond**, against **95.0 %**
+of the amount in the "beyond" band before the fix. Three things this caught that a total never would:
+- **The money view and the count view move in opposite directions.** Band 1's *amount* share rose from
+  3.8 % to 33.6 % while its *product-count* share fell from 59.0 % to 48.7 % — the excluded population now
+  reconstructs too cheaply. Report both views or the write-up is misleading either way.
+- **A per-row "which rule fired" label is only trustworthy if it is computed in the SAME query as the
+  amount.** Here the label lived on the cost-split table and was recomputed with a *different site
+  fallback* than the rollup that produced the amounts, so **4,370 of the 6,709 rows labelled "no lot size"
+  still carried a non-zero amount**, and that class held **50.1 %** of the remaining total. Anyone sizing
+  the exclusion gap from the label would over-state it by **~2×**. The warning flag emitted alongside the
+  amount was the honest signal — and neither consuming model loaded it. Emit the label and the warning in
+  the query that computes the number, and expose them downstream.
+- **Read the top-20 offenders with their labels first.** One survivor kept an unchanged lot size in the
+  metadata while its cost per unit fell by a factor of 8,893 — the fastest available proof that the rollup
+  query really was deployed and really was driving the amounts, which round 1 could never establish.
+
+**6. Two more mechanical notes from the deployment.** A late-added column mints a **fresh `uuid4`
+lineageTag per model**, so a cross-model byte-identity audit fails on that one line
+(`AUDIT FAIL (1 failures, 262 passes)`) — align the tag across the models (or exempt `lineageTag` lines)
+to get back to `AUDIT PASS (0 failures, 263 passes)`; the column then binds in both. And a last-resort
+precedence branch can be **dead weight**: the charges-quantity fallback fired on **zero** rows of the
+component model-wide. Keep it for safety if you like, but say so in the write-up rather than implying it
+carries load.
