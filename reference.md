@@ -2419,3 +2419,147 @@ to get back to `AUDIT PASS (0 failures, 263 passes)`; the column then binds in b
 precedence branch can be **dead weight**: the charges-quantity fallback fired on **zero** rows of the
 component model-wide. Keep it for safety if you like, but say so in the write-up rather than implying it
 carries load.
+
+### 2026-09-07 (transporting a report's visual layer onto a rebuilt model)
+
+A 15-page report had to move onto a rebuilt semantic model that had retired a margin-level selector
+table and 86 measures. The whole transport was scripted — read the source report's PBIR, rewrite the
+mapped bindings, drop what the new model no longer has, write the target — and then gated three ways:
+a byte-fidelity ledger, a six-check structural gate, and a REST `executeQueries` run of every visual's
+own query against the published model. End state: 15 pages, **211 visuals of which 185 are
+byte-identical to the source**, `GATE PASS (0 failures)` and
+`REST GATE PASS: queries=55 errors=0 nonFinite=0`. Everything below is from that run.
+
+**1. Desktop serialises doubles with .NET Framework `"R"` formatting — and that is what makes a
+byte-identity ledger possible at all.** `json.dumps` emits Python's shortest round-trippable repr;
+Desktop emits `"R"`, i.e. `G15` and a fall back to `G17` when 15 digits do not round-trip. On one
+visual's position: ours `"x": 643.3333333333334`, Desktop's `643.33333333333337` — 18,816 bytes
+against 18,818, both parsing to the same IEEE double. §2026-09-05 learning 4 caught this in a model
+file (`diagramLayout.json`); it is not a model-file quirk, it is how Desktop writes **every** JSON in
+the project. Fix it once in the serialiser (format `G15`, parse it back, use `G17` if it differs) and
+prove it with a **whole-tree round-trip sweep**, not a spot check: 779 of 779 JSON files across four
+projects came back byte-identical, and a second reviewer independently reproduced 772/772. Measured
+residual: exponent-notation doubles would still differ (`1e-07` against .NET's `1E-07`) — no such
+value existed in the 779 files, so the gap is documented rather than fixed. Without this, "185 files
+byte-identical" is not a claim you can make, and every unchanged visual has to be re-reviewed by eye.
+
+**2. A projection's `queryRef` can be a LEGACY ALIAS, and the formatting selectors key on the alias,
+not on `Table.Measure`.** Iron Rule 8 says selectors must match the visual's ACTUAL projection
+strings. This run showed the sharp edge of "actual": Desktop keeps a stale `queryRef` on a projection
+after a model rename, so the actual string is **not** `Table.Measure` for its own field.
+**2 of 32 mapped projections** on one detail table carried such an alias, and that table's
+conditional-formatting `selector.metadata` entries pointed at the alias — live formatting, not dead
+leftovers. Two consequences, both measured:
+
+- A rebind guard written as `if queryRef != f"{table}.{measure}": raise` **fires on real data** and
+  aborts the build on a Desktop-tolerated identifier. Don't abort — rewrite the field, set `queryRef`
+  to the canonical NEW form, and record BOTH the canonical old and the stale old in the
+  selector-rewrite map so a selector keyed on either follows. Emit a note naming the normalisation so
+  the ledger says it happened.
+- An audit that flags "stale selectors" by **reconstructing** the canonical queryRef from the field
+  reports live formatting as dead. Compare each selector against the visual's ACTUAL queryRef set
+  instead. Measured with the source as its own baseline: **0** genuinely stale selectors across 211
+  visuals and 34 selectors — every one matched a projection of its own visual. The whole "expected
+  pre-existing stale selector" the plan had budgeted for was an artefact of the reconstruction.
+
+**3. A custom visual's title is a DAX literal, and no binding scan can see it.** Custom-visual titles
+live in `objects.<name>Settings` as `Literal.Value` strings. A page was renamed and its measures
+rebound; every binding-field scan (`Entity`, `Property`, `queryRef`, `selector.metadata`) passed clean
+while the chart on that page still displayed the retired wording in its title. Binding scans exempt
+display text **by design** — you keep `nativeQueryRef` and `displayName` deliberately — so the label
+had no checker at all. Rule: a rename needs its own **display-text gate**, separate from the binding
+gate, scanning three surfaces for the retired substrings: `displayName`, `Literal.Value`, and textbox
+`textRuns[].value`. Measured: 4,736 display strings on the target, 0 hits after the fix; the same
+check against the un-renamed source returns 5 findings including the very title the binding scans had
+passed. The repair was one line in one of 236 files — the cost was entirely in not having looked.
+
+**4. Page `pageBinding` is a binding surface, and a walker that starts at visuals + `filterConfig`
+misses it.** Drillthrough parameters are declared on the page, not the visual: **60 parameter fields
+across 6 visible pages**, resolving to 14 distinct columns. Adding that one surface moved the
+inventory from `refs=645` to `refs=705` on the same source. The general defence is cheap: **print a
+scale count per surface on every PASS line** (pages/refs, visuals/selectors/projection refs, fields
+scanned, files swept, files compared, strings scanned) so a surface you forgot shows up as a counter
+that never moves and a vacuous pass is visible. Proof that works: blinding the `pageBinding` walk
+dropped `fields_scanned` from 2,896 to 2,776 — exactly the 120 = 60 x (Entity + Property).
+
+**5. Three ways a REST `executeQueries` gate scores a FAILURE as a PASS.** All three were live in a
+first-draft gate over 55 queries; each was found by asking "what does this code do when the response
+is not what I expect?" rather than by a failing run.
+
+- **A 200 whose body is not an executeQueries payload.** Enumerating the reachable variants,
+  **all five passed** the naive check: a captive-portal HTML page, `{"results":[{}]}`,
+  `{"foo":"bar"}`, `{"results":[{"tables":[{}]}]}`, and a body with `rows:"oops"` which even scored
+  **rows=1** — in PowerShell `@($null).Count` is 1 and a bare string is one object. Assert the shape:
+  a `tables` node whose first table's `rows` is an **array** (an empty array is still a legitimate
+  empty result). Check first that your JSON parser yields an array type for 0, 1 and 2 rows, or the
+  assertion false-fails valid responses. Related: indexing `results[0].tables[0]` on a 200 that
+  carries `results[0].error` throws `Cannot index into a null array` and aborts the whole run.
+- **A 429 retry loop whose `continue` skips the error assignment.** Exhausting all four attempts left
+  both the response and the error variable null, which scored as `rows=0, error=null` — a clean,
+  silent, zero-row PASS on a query that never ran. Guard after the loop: no response AND no error is
+  itself an error.
+- **A transport failure recorded as a query defect.** `HttpRequestException: No such host is known.
+  (api.powerbi.com:443)` failed 1 of 55 queries and therefore the whole gate, on an environmental DNS
+  blip; the same error fired twice more in the next run and recovered on the very next attempt both
+  times. Discriminate on whether the exception carries a `Response`/status at all: **no status =
+  transport**, retry (3 extra attempts, 5 / 15 / 30 s back-off); **a status = the service answered**,
+  record it — except 429 (its own budget) and transient 5xx (500/502/503/504, same schedule as
+  transport). Verified by AST-extracting the shipped classifier and driving it with real ErrorRecords:
+  12/12 classifications correct, and a dry-run scenario pointed at an unresolvable host exercises the
+  real HTTP path (4 attempts, 55.3 s, error recorded only at the end, the other 54 queries unaffected).
+
+Two more mechanical notes from the same script: `$x | ConvertTo-Json` emits **nothing** for an empty
+collection and a **bare object** for one element — use `-InputObject @($x)` or a downstream
+`json.load` expecting a list breaks; and a `Retry-After` header may be an HTTP-date, in which case
+`.Delta` is null and only `.Date` is set, so handle both and clamp the result (a bogus header must not
+park the run for hours).
+
+**6. An agent CAN drive a device-code sign-in — detach the script and hand the code out through a
+file.** No interactive console is needed. Launch the script detached (`Start-Process` / a backgrounded
+`pwsh -NoProfile -File …`), have it POST to the `devicecode` endpoint, write the returned `message`
+verbatim to a prompt file, and let it poll the token endpoint itself until a deadline; the controller
+relays the prompt file's contents to the operator. Details that make it safe and unattended: keep the
+token in a **process variable only** and null the rest of the token payload the moment you have read
+`access_token`, so nothing lands in a log or on disk; delete the prompt file in a `finally` so a stale
+code is never displayed; treat `authorization_pending` as continue and `slow_down` as +5 s on the poll
+interval; and treat a token-poll failure with **no parseable AAD error body** as a transport hiccup
+and keep polling rather than failing the sign-in. Cost measured: one operator interaction per run,
+then ~3 minutes of query time for 55 queries (158.5 s, 79,950 rows).
+
+**7. AppSource custom visuals travel as ids, not as files.** `report.json`'s `publicCustomVisuals` is
+a list of AppSource ids; a report using them carries **no imported visual package**, and Desktop
+downloads each one on first open. Porting a report's custom visuals is therefore copying that list.
+An id that no visual actually uses can simply be dropped — one of three was unused here, and removing
+it made the rebuilt `report.json` differ from its source by **exactly one line**, which doubled as
+independent evidence that the serialiser of learning 1 reproduces Desktop's bytes on the largest file
+in the project. Hygiene check both directions: every custom-visual type in use is registered, and
+every registered id is in use.
+
+**8. Reviewing a built artefact with NO version control: classify every file against its SOURCE.**
+The deliverable folder had no git, so "show me the diff" did not exist. What worked: classify **every**
+file in the target as byte-identical / modified / added / deleted against the file it came from,
+reconcile the classes to the total (**236 files = 199 identical + 33 modified + 1 added + 3
+project-level**), and print SOURCE→TARGET diffs **only** for the modified class. The identical class
+then needs no reading at all and the reviewer's whole attention goes to the 33 files that changed —
+which is how a one-line title literal (learning 3) and a two-selector rewrite (learning 2) got read
+carefully instead of skimmed. Per Iron Rule 7 the gate recomputed that classification from the source
+bytes and transcribed its expected sets from the spec, rather than reading the builder's own ledger: a
+checker that learns its expectations from the thing it checks cannot fail. Two operational traps came
+with the pattern:
+
+- **The test suite overwrote the real ledger.** Every `pytest` run built a temporary target and wrote
+  its ledger to the same path, so the evidence file on disk described a scratch folder. Fixes: put the
+  target path IN the ledger so the artefact says what it describes, and run the real build **last** in
+  any session that also runs tests.
+- **`rmtree(ignore_errors=True)` before a rebuild can half-wipe a locked target** — one file held open
+  by a running Desktop leaves a stale page folder behind with no entry in `pages.json`, and the build
+  summary still reads correct. Drop `ignore_errors`, assert both trees are gone before writing
+  anything, and keep a pristine backup of the pre-build target. Proven by rebuilding over a locked
+  copy: `PermissionError` and an untouched target, instead of a plausible-looking wreck.
+
+**Coverage note worth writing down.** The REST gate proves **executability and finiteness**, not
+cell-for-cell fidelity: the generated queries carry the report-level filters and the page's currency
+pin but no page-level filters, so their row counts are not the visuals' row counts and `TOPN(300, …)`
+legitimately returns every row tied on the sort key (one query returned 15,175). Say that in the
+hand-over. Visual-level fidelity belongs to the human walk-through, and a gate that claims more than
+it proves is worse than one that claims less.
