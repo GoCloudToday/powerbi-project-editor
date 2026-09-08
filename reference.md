@@ -2563,3 +2563,56 @@ pin but no page-level filters, so their row counts are not the visuals' row coun
 legitimately returns every row tied on the sort key (one query returned 15,175). Say that in the
 hand-over. Visual-level fidelity belongs to the human walk-through, and a gate that claims more than
 it proves is worse than one that claims less.
+
+### 2026-09-08 (which date drives FX, quantifying a method change read-only, and the auth routes that do and do not work)
+
+An analysis-only session on a sales/margin model: "which date is used for FX conversion, can it be
+the invoice date when invoiced, is the margin at budget FX, and how do we move a customer grouping to
+another ERP column". Nothing was edited; three learnings still earned their place.
+
+**1. An FX-date question has four attachment points, and they can disagree.** Traced end to end:
+(a) the source-rate derivation in the shared M expression that builds the header rate — here an
+explicit `ExchangeRateDate` column set to the document date, with the ERP's fixed order rate kept as
+one leg and only the company-currency→group-currency leg date-driven; (b) the line table's M join key
+(entity currency + date) for the per-piece cost columns; (c) nine calculated columns (consolidated
+sales plus seven cost components) that `LOOKUPVALUE` the rate at a date; (d) about twenty
+display-currency measures that divide by the rate at a date. Everything used the order's document
+date — except two surcharge measures that used the reporting (invoice) date. Grep for the date
+column's name AND for `LOOKUPVALUE(FX` across tables, expressions and measures before answering
+"which date"; and a date change must move all four surfaces through ONE date column expanded into
+the fact, or the model quietly disagrees with itself. Also worth stating in the answer: a frozen
+history slice had its invoice date synthesised as null, so an invoice-date rule could only ever apply
+to the live-ERP era — the population a rule can reach is part of the answer.
+
+**2. Quantify a proposed method change with a read-only headless probe before recommending it.** Ten
+DAX queries against the model's own cache (headless open in 50 s, every query under a second,
+Desktop closed after 80 s, no save) turned "should FX follow the invoice date?" into numbers: 73 %
+of invoiced current-year sales had been converted at an earlier month's rate, yet the switch moved
+the total by **+0.2 %**, single subsidiaries by ±1 %, single subsidiary-months by up to ±3 % — a
+consistency decision, not a restatement. The probe also caught a hazard the design discussion had
+missed: the naive variant "use the reporting date" would push OPEN orders (future confirmation dates)
+onto projected rates (**−4.7 %**) and 68 lines past the projected-rate horizon with no rate at all.
+Simulate the rule on every population it touches, not only the one that motivated it. Measured on the
+side: the header-level invoice join keeps ONE invoice date per order (`Table.Distinct`), and 171 orders
+carried 3,408 invoices spread over several months — an invoice date at line grain needs the
+invoice-lines entity, which the dataflow already had. Budget-rate question, same method: grep every
+`Budget` token, then follow the cost dataflow — its intercompany conversion used budget rates but the
+currency-split entity divided them out again before the model, so "no budget FX in the margin" was a
+traced statement, not an assumption (residual: percentage overheads on converted bases, flagged, not
+quantified).
+
+**3. Auth routes for an agent-driven pull, measured.** Device code with the Azure CLI first-party
+public client (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`) and scope
+`https://analysis.windows.net/powerbi/api/.default` → Power BI REST works: Gen1 `model.json` per
+dataflow, `/transactions` refresh history, one code, about three minutes including the operator. The
+SAME client with the tenant's SharePoint `.default` scope signs in, but SharePoint REST answers
+`401 {"error":"invalid_request"}` to `_api/web/GetFolderByServerRelativePath(...)` — twice, once via a
+refresh-token exchange from the Power BI sign-in and once via a direct sign-in. Tenant files are read
+through Microsoft Graph instead (`/sites/{host}:/sites/{site}` → drive → `/root:/{path}:/children` →
+`@microsoft.graph.downloadUrl`). Two operational traps: the host's resolver dropped
+`login.microsoftonline.com` for about three minutes mid-poll and that flow ended in `invalid_grant`
+(cause not isolated between the outage and an auto-selected account on the device page) — pre-resolve
+BOTH the login host and the target host before issuing a code so a code is never burned while DNS is
+down, keep DNS failures in the poll loop transient, and log `error_description`, not just `error`;
+and a token lives one resource — plan one code per resource, name the account the operator must pick,
+and cap a session at two or three codes (four were asked here; the last two produced nothing).
