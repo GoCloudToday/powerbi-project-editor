@@ -2592,7 +2592,12 @@ the total by **+0.2 %**, single subsidiaries by ±1 %, single subsidiary-months 
 consistency decision, not a restatement. The probe also caught a hazard the design discussion had
 missed: the naive variant "use the reporting date" would push OPEN orders (future confirmation dates)
 onto projected rates (**−4.7 %**) and 68 lines past the projected-rate horizon with no rate at all.
-Simulate the rule on every population it touches, not only the one that motivated it. Measured on the
+Simulate the rule on every population it touches, not only the one that motivated it. **And compare
+pure with pure**: the first estimate (+0.2 %) set the model's CURRENT value — which carries an ERP
+fixed-rate residual the date change never touches (≈ −0.2 %) — against a pure lookup at the new date;
+after the change, pure-new vs pure-old on the same data was −0.02 % in total with the same ±1.6 %
+monthly swings. A simulation column must be compared with a simulation column built the same way,
+and the realised effect re-measured after the refresh. Measured on the
 side: the header-level invoice join keeps ONE invoice date per order (`Table.Distinct`), and 171 orders
 carried 3,408 invoices spread over several months — an invoice date at line grain needs the
 invoice-lines entity, which the dataflow already had. Budget-rate question, same method: grep every
