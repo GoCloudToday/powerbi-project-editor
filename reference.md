@@ -2732,3 +2732,65 @@ the END of an interpolated line swallows the rest of the file; `[regex]::Matches
 migration produced partitions with inconsistent lookups (site-specific pack-level shifts of 19,149 lines in one month, none in the
 partitions loaded before the window). Read the ORIGINAL model's refresh timestamps to find the safe window (here 23:23-01:07 UTC
 comes out consistent) and gate every load start on it.
+
+### 2026-09-09 round 2 (rebinding a report onto a read-only dataset with report-level measures — what Desktop enforces)
+
+Built a thin PBIR report on a published semantic model that could not be changed: 92 report-level
+(extension) measures, hidden surrogate slicers as selector state, n × k data-driven buttons, chart
+copies behind bookmarks. Every failure below produced a concrete Desktop message; the offline audit
+passed each time, so these are rules the audit must carry, not things Desktop will explain.
+
+1. **An extension measure is addressed through the `extension` schema everywhere.** Visual projections,
+   filter fields, sort clauses, bookmark filters and title bindings write
+   `"SourceRef": {"Schema": "extension", "Entity": "<host table>"}`; a filter's `From` entry carries
+   `"Schema": "extension"` next to `Entity` (the official semanticQuery schema documents `Schema` on
+   both `EntitySource` and `StandaloneSourceRefExpression`); the `queryRef` string stays plain
+   `Host.Measure`. A model-style reference compiles and audits clean but renders "Something's wrong
+   with one or more fields … Missing_References" on every measure-only visual and "The QueryDefinition
+   Select is missing or empty" once all of a visual's fields are unresolved. One alias cannot serve a
+   model column and an extension measure at once — when a `From` entry is shared, write the measure as a
+   direct `Entity` reference instead.
+2. **Cross-references between extension measures need `references.measures[].schema = "extension"`** in
+   `reportExtensions.json` (the schema says: leave empty for model measures, use the extension name for
+   extension measures). Desktop-authored files only show the empty form because their local measures
+   referenced model measures — copying that shape leaves every dependent measure "missing". The
+   reportExtension schema is self-contained: `Test-Json -SchemaFile` validates the file offline;
+   `dataType` accepts Text/Boolean/Double etc. (`PrimitiveTypeName`).
+3. **Bookmark `display.mode` is a const: only `"hidden"`.** A visible target is expressed by omitting the
+   `display` node. Writing `"visible"` fails the whole open with "must be provided as a const".
+4. **Desktop's own view-switching bookmarks are usually display-only (`suppressData: true`).** Copying
+   one to carry a slicer value silently ignores the value: the view switches, the state does not
+   (symptom: the profile view opened with the "Total" button still lit). Strip every captured data
+   node from the copy (`explorationState.filters`, each container's `filters`, `objects`,
+   `activeProjections`, `orderBy`), keep only `visualType` + `display`, remove `suppressData`, then
+   add the one slicer entry. That yields "view bookmark + one data item" without resetting the user's
+   other slicers.
+5. **Bookmark navigators highlight click history, not state.** A navigator lights the last bookmark of
+   its group that was applied; when the same logical state is reachable from several navigators
+   (flow × dimension), a re-shown navigator lights a stale button. For n × k selectors use plain
+   action buttons whose `fill.fillColor` and `text.fontColor` are measure-bound
+   (`"solid":{"color":{"expr":{"Measure":…}}}`, extension schema) over the hidden surrogate slicer,
+   one bookmark per (flow, state) from rule 4; encode "profile view" as an extra slicer value so the
+   same measures light the Profile button. Hidden slicers on tables unrelated to the facts (an ABC
+   bucket list, a classification key) are fine as state holders; a bookmark navigator over Data-only
+   bookmarks is enough when a selector exists exactly once.
+6. **Splitting a field-parameter chart into fixed-axis copies:** keep the original visual name on the
+   first copy (the existing view bookmarks address it), hide the others by default, toggle with
+   display-only bookmarks + a horizontal navigator; the navigator that sits in a view group is not
+   necessarily the one whose id you expect — resolve `parentGroupName` before assigning option sets
+   (they were crosswise here: inbound buttons toggled hidden outbound charts).
+7. **PowerShell variable names are case-insensitive.** `$src` in a loop clobbered the script-level
+   `$Src` (report path) and `$c` (a parameter) clobbered `$C` (a lookup table) — each cost a build.
+   Never reuse a script-level name differing only by case; name loop variables distinctly.
+8. **Rebuilding while Desktop has the folder open** works on disk (PBIR files are not locked) but the
+   open instance is stale and a save from it overwrites the build — tell the operator "close without
+   saving, reopen" before every rebuild. A synced (OneDrive/SharePoint) folder can also hold the
+   `definition` directory for ~20 s after a write ("being used by another process"); retry rather
+   than debug.
+9. **`&&` in DAX does not short-circuit for error avoidance:** `r <> 0 && ABS(q/r - ROUND(q/r,0)) < eps`
+   still raises "An argument of function 'ROUND' has the wrong data type" when `r = 0`. Compute
+   `d = DIVIDE(q, r)` first and test `NOT ISBLANK(d) && …`.
+10. **Pre-join instead of per-row LOOKUPVALUE:** seven `LOOKUPVALUE`s per (pack configuration, quantity)
+    pair (650k pairs) took ~22 s; `NATURALLEFTOUTERJOIN` of the pair table with a lineage-stripped
+    ratio table (`SELECTCOLUMNS(…, "pc", id + 0)` on both sides) computes the same levels in ~15 s
+    (values identical). The remaining cost is the fact scan, not the lookups.
