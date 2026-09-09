@@ -2657,8 +2657,8 @@ report-level measures only. Three things bit during the inventory:
    level; when one branch reads columns the target model lacks, the measure is not dead — that
    branch is. Classify leaves into "no equivalent", "approximate", "selector table" and "bridgeable",
    and let the measure's verdict come from the branch structure (a title/text measure with one dead
-   `SWITCH` arm is PARTIAL, not NO). Also strip external-version gating helpers (a `Client Check` that
-   is constant TRUE in the internal report) before classifying, or every measure inherits SELECTOR.
+   `SWITCH` arm is PARTIAL, not NO). Also strip external-version gating helpers (an access-gate measure that
+   is constant TRUE in the internal variant) before classifying, or every measure inherits SELECTOR.
 3. **Bridging a missing relationship with `TREATAS(VALUES(dim[key]), fact[key])` is exact only when the
    dimension is complete.** A dimension trimmed to another fact's keys (SKU trimmed to inbound keys)
    silently dropped 12 % of outbound lines (6,742,650 vs 7,091,298). Guard trimmed bridges with
