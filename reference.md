@@ -2621,3 +2621,22 @@ BOTH the login host and the target host before issuing a code so a code is never
 down, keep DNS failures in the poll loop transient, and log `error_description`, not just `error`;
 and a token lives one resource — plan one code per resource, name the account the operator must pick,
 and cap a session at two or three codes (four were asked here; the last two produced nothing).
+
+### 2026-09-08 round 2 (a headless Desktop launch into a LOCKED session never loads the model)
+
+Same day, later: the operator refreshed and saved two models and left; the headless verification
+(`Start-Process <pbip>` → poll the new msmdsrv for a catalog with N tables) then failed four times in a
+row, 20 minutes each, with nothing in the transcript between "launching" and "stopped" — the catalog
+list stayed EMPTY the whole time. Not a dialog (UI Automation found only the main window, text
+"Working on it"), not OneDrive (both `cache.abf` "Available on this device"; the same failure from a
+copy on a local, non-synced disk), not load (Desktop +0.2 s CPU per 10 s, msmdsrv 0 s, working set flat
+at 491 MB), not the model (the same PBIP had loaded headless in ~55 s three times earlier that day).
+The one variable that flipped was the session: `Get-Process LogonUI` was running — the screen had
+locked after the operator walked away, and every failed launch happened after that. A Desktop instance
+that is ALREADY open keeps working under the lock (earlier learning); a NEW one started into the
+locked session sits at "Working on it" indefinitely. Rules: (1) check `LogonUI` before any headless
+launch and say so in the log — a silent `continue` on an empty catalog hid the real state for
+80 minutes; (2) if locked, either use an engine that is still open (title + table-set match) or park
+the run in a detached script that polls for the unlock and then executes; (3) the poll loop must
+print a heartbeat line (catalog empty / N tables / msmdsrv count) so the transcript shows WHERE it
+waited, not just that it did.
