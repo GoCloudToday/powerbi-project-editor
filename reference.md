@@ -2671,3 +2671,64 @@ report-level measures only. Three things bit during the inventory:
 PowerShell footnote: inside `function Map($t,$c,…)` a script-level hashtable named `$C` is shadowed by
 the parameter `$c` (names are case-insensitive) — "Unable to index into an object of type
 System.String". Name lookup tables distinctly from any parameter.
+
+
+### 2026-09-09 (surrogate re-key waves vs incremental refresh: natural keys at load time; deploying a type change over XMLA; the API truncates)
+
+Follow-up to the 2026-09-04 round 2 parity work on the same ~200M-row rebuild. Everything below was measured.
+
+**1. A source that renumbers its surrogates breaks an incremental-refresh model where a daily full reload hides it.** Between a
+fact load (00:09) and a dimension load (07:14) the warehouse re-keyed one site and its 13 clients (`971_1915_70` became
+`3500_1915_835`, owners got duplicate surrogates 9737-9751). Result: 1,057,214 order lines (~1.5 % of EVERY month back to the
+start of history) on the blank Client member, because the fact rows still carried the old surrogates and the refreshed dimension
+only the new ones. The original model shows the same defect class (514,761 orphaned lines after its next refresh) but heals daily
+because it re-queries its current-window partition every night; an incremental model keeps the old surrogates in its historical
+partitions until a full reload. Diagnosis that worked: same fact key on both models with identical line counts (40,030), the
+dimension row present on one side and absent on the other, and the client/site codes present under a NEW key on the refreshed
+side. The 700k "duplicate (client, sku) pairs with identical attributes" in the SKU master were the fingerprint of an EARLIER wave
+- 74,582 of them were referenced by BOTH surrogates inside the window, so SKU history was already split in production.
+
+**Fix: derive natural keys at load time, never store the source's integers as relationship keys.** The join to the master
+happens while the surrogates are still consistent; the stored key is the code. Measured decisions:
+- Reference "codes" are NOT unique in a per-source-system warehouse (Order Status 361 rows / 16 keys, Carrier 19,031 / 16,752,
+  Adjustment Reason 28,015 / 4,056) - key those dims on the DISTINCT text (`key|name` where both attributes are used), which is
+  what every visual groups by anyway; the fact stores the text. Check uniqueness on the live model (`COUNTROWS` vs
+  `DISTINCTCOUNT`) before choosing each key.
+- High-cardinality keys (7.4M SKUs): `CAST(SUBSTRING(HASHBYTES('MD5', client + '|' + sku), 1, 8) AS bigint)` keeps the 8-byte
+  dictionary footprint; rows missing from the master hash `'#' + surrogate`. Dedupe the dim with `ROW_NUMBER() OVER (PARTITION BY
+  hash ORDER BY surrogate DESC)`; a collision would fail the refresh loudly (one-side uniqueness). Result: 6,790,295 rows = distinct
+  hashes = distinct (client, sku), zero collisions.
+- Keep the column NAMES (`ClientID`, `SKUID`, `OrderStatusID` ...) and change only content/type: relationships, measures and report
+  bindings are untouched; the generator needs a `(table|column) -> dataType` override map (47 columns here) plus `summarizeBy: none`
+  and no `formatString` on the now-text columns. VertiPaq joins on dictionary ids, so text keys cost nothing at query time; only the
+  dictionary grows (negligible at 4k values, 150-300 MB at 7M - hence the hash).
+- Navigation partitions for such dims: select the natural columns, `Table.AddColumn` the key under the OLD id column name,
+  `Table.SelectRows(... <> null)`, `Table.Distinct(..., {id})`. Extra M output columns without a TMDL column block are dropped
+  silently - no column blocks to add.
+
+**2. Deploying a column TYPE change to a published model.** Fabric `updateDefinition` fails the LRO with
+`Alm_InvalidRequest_PurgeRequired` ("changes will cause data deletion", `isRetriable: false`) - and STILL fails after a
+`clearValues` refresh; the check is structural. The XMLA endpoint takes it: TOM `TmdlSerializer.DeserializeDatabaseFromFolder` ->
+set `Name`/`ID` to the live database's -> `JsonScripter.ScriptCreateOrReplace` -> `Server.Execute`. Traps: AMO refuses interactive
+auth from a non-interactive host ("When interactive authentication is not supported, an external access-token is required") -
+launch the deploy in a VISIBLE `powershell.exe` window via `Start-Process -File <launcher.ps1>`; pass accented paths through a
+BOM-encoded launcher on an ASCII path (or build them with `[char]0xNN`), because both the `-Command` string and a BOM-less PS 5.1
+script mangle them; after `Execute`, `Server.Refresh()` still shows the OLD metadata - verify through `getDefinition`.
+`createOrReplace` empties the facts, so the policy load (`applyRefreshPolicy: true` per table) must follow, dims first.
+
+**3. `executeQueries` truncates large results silently, and differently per model.** An 846,945-row `SUMMARIZECOLUMNS` came back
+as 82,168 rows from one model and 82,295 from the other, no error, no flag; a key-level diff on those "results" produced 88,266
+phantom differences. Always `COUNTROWS` the same expression server-side first, and diff by server-side aggregates (per level /
+per key prefix / per site) rather than pulling detail. Related: production's refresh record lists ONE partition per fact
+(`Orders_1`) - "refreshed today" does not mean the month you are comparing was re-queried.
+
+**4. Small PowerShell things that each cost a re-run:** `R` and `Diff` are built-in aliases (aliases beat functions); a parameter named
+`$args` is the automatic variable, so `@args` splats nothing and the step "completes" instantly; variables are case-insensitive
+(`$p` inside a loop clobbered the `$P` ids array and the requests went to a garbage URL); a here-string terminator `"@` produced at
+the END of an interpolated line swallows the rest of the file; `[regex]::Matches($t, 'decimal(38,18)) % CAST')` needs
+`[regex]::Escape`; `$x = if (...) {...} else {...}` yields `Object[]`, cast before `List<string>.AddRange`.
+
+**5. Timing rule for loads against a warehouse with a nightly key migration:** a full load whose last batch straddled the
+migration produced partitions with inconsistent lookups (site-specific pack-level shifts of 19,149 lines in one month, none in the
+partitions loaded before the window). Read the ORIGINAL model's refresh timestamps to find the safe window (here 23:23-01:07 UTC
+comes out consistent) and gate every load start on it.
