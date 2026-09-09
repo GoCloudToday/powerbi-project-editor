@@ -2640,3 +2640,34 @@ launch and say so in the log — a silent `continue` on an empty catalog hid the
 the run in a detached script that polls for the unlock and then executes; (3) the poll loop must
 print a heartbeat line (catalog empty / N tables / msmdsrv count) so the transcript shows WHERE it
 waited, not just that it did.
+
+### 2026-09-09 (inventorying a report against a dataset it cannot change — parser and verdict traps)
+
+Task: decide how much of a report can be rebound to a published, read-only semantic model with
+report-level measures only. Three things bit during the inventory:
+
+1. **TMDL fenced expressions.** Desktop writes multi-line DAX either as an indented block after
+   `measure X =` or as a ```` ``` ```` fence (`measure X = ```` … ```` ```` `). A line parser that only
+   handles the indented form records the literal fence marker as the expression — 41 of 257 measures
+   here — and every downstream dependency closure silently treats them as leaf-free (a
+   `DIVIDE([A],[B])` measure came out "FULL" while both operands were blocked). Handle the fence
+   explicitly (header tail == ```` ``` ```` opens it, a line whose trim is ```` ``` ```` closes it) and assert
+   zero empty/fence-only expressions before trusting any closure.
+2. **Worst-leaf verdicts over-condemn.** A `SWITCH` over a selector column has one branch per
+   level; when one branch reads columns the target model lacks, the measure is not dead — that
+   branch is. Classify leaves into "no equivalent", "approximate", "selector table" and "bridgeable",
+   and let the measure's verdict come from the branch structure (a title/text measure with one dead
+   `SWITCH` arm is PARTIAL, not NO). Also strip external-version gating helpers (a `Client Check` that
+   is constant TRUE in the internal report) before classifying, or every measure inherits SELECTOR.
+3. **Bridging a missing relationship with `TREATAS(VALUES(dim[key]), fact[key])` is exact only when the
+   dimension is complete.** A dimension trimmed to another fact's keys (SKU trimmed to inbound keys)
+   silently dropped 12 % of outbound lines (6,742,650 vs 7,091,298). Guard trimmed bridges with
+   `FILTER(ALL(fact[key]), NOT ISFILTERED(dim) || fact[key] IN VALUES(dim[key]))` — an `IF()` that
+   returns a table is rejected as a `CALCULATE` filter ("The True/False expression does not specify
+   a column"). Verified the pattern live over REST: header→line filter through a bridge table matched a
+   direct `TREATAS` of the header keys row-for-row, and a week selected on one role calendar drove the
+   other fact's lines exactly.
+
+PowerShell footnote: inside `function Map($t,$c,…)` a script-level hashtable named `$C` is shadowed by
+the parameter `$c` (names are case-insensitive) — "Unable to index into an object of type
+System.String". Name lookup tables distinctly from any parameter.
