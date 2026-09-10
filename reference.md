@@ -2794,3 +2794,26 @@ passed each time, so these are rules the audit must carry, not things Desktop wi
     pair (650k pairs) took ~22 s; `NATURALLEFTOUTERJOIN` of the pair table with a lineage-stripped
     ratio table (`SELECTCOLUMNS(…, "pc", id + 0)` on both sides) computes the same levels in ~15 s
     (values identical). The remaining cost is the fact scan, not the lookups.
+
+### 2026-09-10 — page visibility enum, before/after fingerprint shape, post-load lock conflicts
+
+- **Page visibility.** Promoting a hidden drillthrough page to be the only page of a new thin report, the builder wrote
+  `"visibility": "Visible"`; Desktop showed "Something went wrong — Failed to load the report" with only an activity id.
+  Visible pages carry NO `visibility` key (census of a 29-page report: 15 absent, 14 `HiddenInViewMode`). Deleting the key
+  fixed it. Rule: the only valid value is `HiddenInViewMode`; unhide = remove the key.
+- **Auditing a built report against its source picks up the OPERATOR'S later edits too.** A page the operator hid in the
+  built project before publishing showed as "visible → hidden" against the original and was nearly "fixed" back. Before
+  reverting any diff on a project the operator has had open, ask.
+- **Before/after measure fingerprints.** A per-measure `SUMMARIZECOLUMNS(ROLLUPADDISSUBTOTAL(Year), …)` fallback omits
+  years where that measure is blank; a combined multi-measure query emits those years with empty values — 3 phantom
+  "only after" keys on 558. Treat absent == blank in the comparator; float differences from summation order were
+  ≤ 1e-14 relative (11 of 558) — compare numerically, not only as text.
+- **"The operation was cancelled because of locking conflicts"** right after a headless Desktop load (the report's own
+  visuals / post-load work hold locks). Transient: settle 60 s and retry with backoff (8 tries, 10 s × n) instead of
+  failing the run.
+- **Adding a date-independent rate conversion beside a date-dependent one:** precompute the per-row converted amount ONCE
+  on the small cost table (one calc column, all currencies × constant rates), then per fact row a single
+  `SUMX(FILTER(small, key = k && component = c), amount) * qty` with the key read directly from row context
+  (no `FIRSTNONBLANK` context transition). Base measures become `SUM(col) / rate(selected currency)` with no SUMX, and
+  derived levels (GP, CM, GM) are exact algebra on those sums. Verified independently to 1e-14 against a recomputation
+  that shares no code with the DAX.
