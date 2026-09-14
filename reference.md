@@ -2817,3 +2817,63 @@ passed each time, so these are rules the audit must carry, not things Desktop wi
   (no `FIRSTNONBLANK` context transition). Base measures become `SUM(col) / rate(selected currency)` with no SUMX, and
   derived levels (GP, CM, GM) are exact algebra on those sums. Verified independently to 1e-14 against a recomputation
   that shares no code with the DAX.
+
+### 2026-09-14 (rebuilding a planning tool on a fresh star schema, then transporting the ORIGINAL visual layer onto it)
+
+Scope: a 50-table / 207-measure "commercial inputs" model plus its 2-page thin report were rebuilt as ONE project (report
++ model, `byPath`) on a dummy CSV source with a clean star schema (24 tables / 16 relationships / 135 measures), the year
+selector frozen to a parameter, and — after the operator rejected a regenerated front end — the original PBIR visual layer
+(135 visuals, 13 bookmarks) rewritten through a field map. Everything below was measured on this run.
+
+- **TMDL authoring traps (offline TOM gate catches them, Desktop does not explain them).** A `//` comment line between
+  objects fails with `Parsing error type - Indentation … Invalid indentation was detected!` (only `///` descriptions may
+  sit between objects; `//` inside a DAX expression is fine). A `///` description above a `relationship` fails with
+  `Property 'description' is unknown and is not expected in the situation it appears.` (Relationship has no Description;
+  tables, columns, measures, calculation items, expressions and the model do). `ordinal:` on calculation items is
+  unnecessary — definition order is the ordinal.
+- **DAX that parses in TOM but dies at refresh/query time.** `VAR CountA = …` and `VAR Month = …` (names equal to DAX
+  functions) come back from the TMSL refresh as `Warning … The syntax for 'CountA' is incorrect. (<whole expression>)`
+  and the measure is then broken; `MAX(<boolean column>)` surfaces only when ANY query runs
+  (`MdxScript(Model) (1, 27) Calculation error in measure '…': The function MAX cannot work with values of type Boolean`
+  — every query on the model fails until it is fixed). A calculated-table column whose expression mixes types gives
+  `results in a variant data type for column 'EB'` and leaves the partition at State 5 → wrap in `CONVERT(…, DOUBLE)`.
+  Rule: after a headless refresh, run ONE trivial `EVALUATE ROW(…)` before trusting "0 measure errors".
+- **Calculated table + relationship to a table its own expression filters = circular dependency at OPEN.** Desktop:
+  `A circular dependency was detected: T[T], <relationship>, T[CountryName], T[CountryName][T], T[T].` for a
+  `ADDCOLUMNS(CROSSJOIN(ALLNOBLANKROW(dim1[k]), ALLNOBLANKROW(dim2[k])), "x", CALCULATE([m], dim1[k] = …, dim2[k] = …))`
+  table related to dim1 and dim2. ALLNOBLANKROW does not save it. Fix that worked: NO relationships on the materialised
+  table; consumers filter it with `CALCULATE(SUM(T[x]), T[cur] = [Selected], TREATAS(VALUES(dim2[k]), T[k]))` (RLS still
+  reaches it through VALUES of the secured dimension).
+- **Headless data refresh from LOCAL FILES works.** With `dataAccessOptions fastCombine` in model.tmdl, a TMSL
+  `{"refresh":{"type":"full","objects":[{"database":"<catalog>"}]}}` sent with `Invoke-ASCmd` to Desktop's local port
+  loaded 24 CSV-fed partitions in 25 s with no credential or privacy dialog — the earlier "refresh is not headless" rule
+  is about cloud/dataflow auth only. The MSOLAP OleDb DMV loop that had worked in earlier sessions returned nothing under
+  Windows PowerShell 5.1 this time while pwsh 7 worked (SqlServer 22.4 loads in 7 too) — run the harness in pwsh 7.
+- **report.json `settings` is closed.** An invented key (`useNewFilterPaneExperience`) produced
+  "Your report has issues that could not be resolved … An additional property 'useNewFilterPaneExperience' was included
+  in the /settings property of report.json" (Continue / Close Desktop dialog). Copy the block from a Desktop-authored
+  report (`useStylableVisualContainerHeader, exportDataMode, defaultDrillFilterOtherVisuals, allowChangeFilterTypes,
+  useEnhancedTooltips, useDefaultAggregateDisplayName`).
+- **Field-parameter binding shape (Desktop's).** The bound role carries the RESOLVED field as its projection
+  (`Verticals.Vertical`) plus `"fieldParameters": [{"parameterExpr": {"Column": {… "Entity": "<param table>",
+  "Property": "<display column>"}}, "index": 0, "length": 1}]`; the selector slicer projects the display column and
+  stores its selection on the hidden Fields column as `'''Table''[Col]'`. Projecting the Fields column directly renders
+  the NAMEOF string as ONE series with the raw text as legend (measured before the fix).
+- **Hand-written display-only bookmarks** (`options.targetVisualNames` + `suppressData: true`, `visualContainers`
+  entries `{singleVisual:{visualType, objects:{}}}` and `display:{mode:"hidden"}` for the hidden ones, `version 1.11`)
+  worked first time, including a bookmark navigator bound to a bookmark group. In Desktop EDIT mode the navigator
+  buttons need **Ctrl+click** — a UIA `Invoke` only selects the visual.
+- **Transporting a report onto the rebuilt model — what the generic rewriter must cover.** Entity names survive in
+  bookmarks far beyond projections: `visualContainers.<v>.highlight.filterExpressionMetadata.cachedValueItems[].identities[]
+  .scopeId.Comparison.Left.Column`, `filters.byName.<n>.cachedDisplayNames[].id.scopeId`, and `filters.byExpr[].filter.From[]`.
+  Listing keys to rewrite left 92 stale references after two rounds; walking EVERY node of each visual container (all
+  keys except `visualType`/`display`) and every `{From, Where}` block (resolve `Source` aliases from `From`) left 0. A field
+  that no longer exists inside a cached identity cannot be pruned cleanly — map it to a surviving column instead of
+  dropping. Filters on the retired year selector must be DROPPED, not mapped (a one-year calendar maps them to empty).
+  Gate = every `(Entity, Property)` / hierarchy in the output resolves against the TMDL (3,962 refs → 0 unresolved) plus
+  a grep for every old entity name.
+- **Generator hygiene, measured the hard way.** PowerShell variables are case-insensitive: `$T` (a tab) was silently
+  overwritten by `$t` (a file's text) and the "block" inserted the whole file 19× (a 300-line TMDL became 35,605 lines).
+  Use distinct multi-letter names. Passing PowerShell with `''`-escaped quotes through `bash -c 'pwsh -Command …'`
+  strips the doubled quotes and writes `measure CA Target (Display) - X =` (unquoted) — write the script to a file and run
+  it. `$log | Sort-Object -Unique` on a note log hides how many filters were dropped — print counts.
