@@ -2877,3 +2877,36 @@ selector frozen to a parameter, and — after the operator rejected a regenerate
   Use distinct multi-letter names. Passing PowerShell with `''`-escaped quotes through `bash -c 'pwsh -Command …'`
   strips the doubled quotes and writes `measure CA Target (Display) - X =` (unquoted) — write the script to a file and run
   it. `$log | Sort-Object -Unique` on a note log hides how many filters were dropped — print counts.
+
+### 2026-09-15 round 2 (retiring features from a transported report; embedding a dummy source; measure-driven card labels)
+
+- **Field-parameter literals hide in FILTERS too, and a stale one renders as "no filter".** The 2025 Level selector of
+  one view carried a visual filter `Not In ('''Accounts_Source''[dsv_accountname]')` (hide the *Account* level) plus the
+  same literal in 13 bookmark snapshots (28 occurrences). The generic field rewriter cannot see them (they are string
+  Values, not Column nodes), so after the transport the filter matched nothing and four tiles squeezed into a
+  three-tile-wide button slicer — the symptom looked like a sizing bug. Rule: keep an explicit literal map
+  (`'''OldTable''[oldCol]'` → `'''NewTable''[newCol]'`) applied to pages AND bookmarks, then audit every `'''T''[C]'`
+  literal in the report against the TMDL (it joins the entity-reference gate; 82 literals here, 0 unresolved).
+- **Removing a feature from a Desktop-authored report = a closure, not a delete.** For six help overlays (+ buttons +
+  bookmarks) and a legal-entity split the removal set had to cover: the visuals and every DESCENDANT of a removed group
+  (parent-chain walk), `page.visualInteractions` rows naming them, bookmark `visualContainers.<name>`,
+  `visualContainerGroups.<group>` and `.children.<name>`, bookmark `options.targetVisualNames`, the navigator's
+  `deselectionBookmark` (pointed at a removed bookmark), `bookmarks.json` items/children, formatting entries whose
+  `selector.metadata` names a DROPPED projection (`columnWidth` on a removed column — otherwise a dead selector stays),
+  capture-time `highlight` selections whose scopeIds name a dropped field, and static images only referenced by the
+  removed visuals (also de-register them in `report.json`). Each of these surfaced as a leftover in a grep for the
+  removed names — grep the whole definition for every removed visual/bookmark name and every old entity name.
+- **Embedding a dummy source in the model (portable single folder).** Same mechanism as Enter Data: one expression
+  `DummyData = [Entity = "<base64 of raw-deflate CSV bytes>", …]` (record, `PBI_ResultType = Record`) and a reader
+  `Csv.Document(Binary.Decompress(Binary.FromText(Record.Field(DummyData, Name), BinaryEncoding.Base64),
+  Compression.Deflate), …)`. .NET `DeflateStream` output IS what `Compression.Deflate` expects (no header). 1.9 MB of
+  CSV → 292 K base64 chars in one TMDL file; Desktop parsed it, refreshed 23 partitions from it in 21 s. Keep the CSVs on
+  disk as the documented contract and a generator that re-embeds.
+- **Card labels that follow a parameter.** The new card (`cardVisual`) accepts a measure-bound label text per value:
+  `objects.label[] = { properties: { text: { expr: { Measure: { Expression: { SourceRef: { Entity } }, Property } } } },
+  selector: { metadata: "<projection queryRef>" } }` — the same shape Desktop writes for report-extension measures. Bind
+  after the selector rewrite, otherwise the stale entry (still carrying the old queryRef) survives next to the new one.
+  Matrix column headers are display names and cannot be bound — generate them from the parameter at transport time and
+  say so in the docs.
+- **Line endings drift under you.** Files written LF earlier came back CRLF (Desktop-authored or tool-normalised);
+  exact-match patch scripts failed on `` `n `` anchors. Normalise to LF on load and write back CRLF, or match on both.
