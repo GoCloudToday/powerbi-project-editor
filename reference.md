@@ -2910,3 +2910,4 @@ selector frozen to a parameter, and — after the operator rejected a regenerate
   say so in the docs.
 - **Line endings drift under you.** Files written LF earlier came back CRLF (Desktop-authored or tool-normalised);
   exact-match patch scripts failed on `` `n `` anchors. Normalise to LF on load and write back CRLF, or match on both.
+- **`Rows` is a reserved word too** (2026-09-15): `VAR Rows = FILTER(...)` passed the TOM parse and failed at refresh with `The syntax for Rows is incorrect`; a calculated table that reads the broken measure then shows *The query referenced calculated table X which depends on another column, table, relationship or measure that is not in a valid state* on every visual. Prefix table VARs (`TargetRows`).
