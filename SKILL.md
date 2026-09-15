@@ -170,6 +170,7 @@ etryCount:3 on a 2.5-hour query turns one mistake into 8.5 h of capacity. |
 | Turning a data column into a calculated column of the SAME name | Replace the block in place (expression, no `dataType` / `sourceColumn`, same `lineageTag`) and drop the column from the partition M (refresh). Report bindings resolve by name and survive. |
 | One entity amount spread over child rows by several measures | Divide by the count of the UNION of children those measures iterate; per-measure counts add the entity amount once per measure. Prove with Σ measures = Σ entity amounts. |
 | Harness scripts in Windows PowerShell 5.1 | `@()`-wrap rowsets — `.Count` of one unrolled `PSCustomObject` is `$null` (a readiness loop never saw the single catalog). BOM-less UTF-8 scripts are read as ANSI, so non-ASCII literals break. Prefer PowerShell 7. |
+| Field map moves a field to another table (report transport) | Set each filter's `From` entity from the table of the alias-sourced fields in its `Where`, not from the entity default — otherwise the condition reads a property the aliased table lacks (1 visual + 6 bookmarks here). The gate must resolve `From` aliases and `selector.metadata` too: a direct-`Entity`-only self-audit passed 2,305 / 0 while an independent checker found 25. reference.md §2026-09-15 round 4. |
 
 ## Red flags — stop and re-check
 
