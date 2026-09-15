@@ -2911,3 +2911,51 @@ selector frozen to a parameter, and — after the operator rejected a regenerate
 - **Line endings drift under you.** Files written LF earlier came back CRLF (Desktop-authored or tool-normalised);
   exact-match patch scripts failed on `` `n `` anchors. Normalise to LF on load and write back CRLF, or match on both.
 - **`Rows` is a reserved word too** (2026-09-15): `VAR Rows = FILTER(...)` passed the TOM parse and failed at refresh with `The syntax for Rows is incorrect`; a calculated table that reads the broken measure then shows *The query referenced calculated table X which depends on another column, table, relationship or measure that is not in a valid state* on every visual. Prefix table VARs (`TargetRows`).
+
+
+### 2026-09-15 round 3 (aligning a planning model with a reporting model: account-level forecast bases, calculated-column webs, harness traps)
+
+- **A patch / generator script that anchors on `` `n `` silently inserts NOTHING in a CRLF file — and still reports
+  success.** `$t.Replace("`tcolumn Key`n", $block + …)` found no match, the file was rewritten unchanged, and the missing
+  measures only surfaced when a cloned visual bound to them. Rule: every anchor asserts its match count (throw on 0 or
+  > 1), and a generator prints what it actually inserted, counted by name.
+- **Idempotent TMDL generators: replace blocks by object name, keep the lineage tag.** A top-level block = its `\t///`
+  lines + the object line + every following line indented by two tabs or blank:
+  `(?m)^(?:\t///[^\n]*\n)*\tmeasure (?<name>'(?:[^']|'')*'|[^\s=]+) =[^\n]*\n(?:\t\t[^\n]*\n|\n)*`. Collect the owned
+  blocks' `lineageTag`s, remove the blocks, insert the regenerated set where the first one stood (or before the first
+  `\tcolumn`), write CRLF. Second run byte-identical; 19 tags kept, 3 measures added. The earlier "remove from marker A to
+  marker B" version would have deleted an unrelated column that Desktop's serializer had moved between the markers.
+- **A data column can become a calculated column of the SAME name in place.** Replace the block
+  (`column FirstRevenueDate = RELATED(Accounts[FirstInvoiceMonth])`, no `dataType` / `sourceColumn`, same `lineageTag`)
+  and stop emitting the column in the partition M (refresh needed). Report projections, formatting selectors and bookmarks
+  bind by name and kept resolving (2,305 references, 0 unresolved); full refresh with 0 errors.
+- **This calculated-column web is NOT circular (verified on a full refresh):** dimension columns
+  `CALCULATE(MIN(FactA[Month]), FactA[Amount] > 0)` (context transition over the dimension row); fact-B columns
+  `RELATED(Dim[ThatColumn])`; a further dimension column `CALCULATE(SUMX(FactB, …), FactB[CalcFlag] = FALSE())` that
+  filters on a fact-B calculated column reading only the parameter table. 25 tables / 144 measures / 220 columns, 0
+  errors. The loop to avoid: a fact-B column that `RELATED`s a dimension column which itself iterates fact B.
+- **An amount computed once per entity and spread over child rows by SEVERAL measures needs one divisor across all of
+  them.** Two measures (active / ending children) each divided the entity's monthly basis by their own child count, so an
+  entity with one child of each kind counted its basis twice (dummy data: 33 of 313 entities, 18 % of the basis). Count
+  the union of the children the measures iterate, then prove it with a probe: Σ of the measures = Σ over entities of the
+  entity amount — matched to the cent.
+- **DAX blank semantics to probe before writing date filters** (local engine): `YEAR(BLANK())` and `EOMONTH(BLANK(), 0)`
+  return BLANK, but `BLANK() < DATE(2026, 9, 1)` is TRUE — a blank date passes every "before X" filter. Guard with
+  `NOT ISBLANK(...)` first.
+- **Transported report filters also hold VALUE literals.** A categorical filter
+  `StatusCode IN {'Active Contract', 'Contract Awarded'}` survived the field rewrite untouched while the source had renamed
+  the second value to `Awarded` — the visuals would silently drop every row with the new name. After any source VALUE
+  rename, grep the report (pages and bookmarks) for the old literals; the field map never sees them. Clear or remap the
+  condition and keep the filter card.
+- **Windows PowerShell 5.1 harness traps.** (1) A function returning ONE row as a `PSCustomObject` unrolls it, and `.Count`
+  on it is `$null` in 5.1: a readiness loop testing `$cats.Count -gt 0` timed out after 7 minutes while the engine already
+  served the catalog; the same script under PowerShell 7 was ready in 5 s. Wrap rowsets in `@()`. (2) A BOM-less UTF-8
+  `.ps1` is read as ANSI: a non-ASCII user-profile path literal became mojibake (`The term 'C:\Users\<name>…' is not
+  recognized`). Add a BOM, pass such paths as arguments, or run PowerShell 7.
+- **Static DAX reference checkers must drop string literals first.** A `[name]` scan flagged `"0  [0%]"` and
+  `"  [" & FORMAT(x) & "%]"` as unknown measures (9 false problems); stripping `"(?:[^"]|"")*"` before matching gave 0.
+- **Choosing a forecast basis on evidence: replay a past plan on a cached real-data model.** Freeze an as-of date one
+  cycle back, compute each candidate basis from the months before it only, and compare with the following year's actuals:
+  revenue-weighted bias (Σ forecast ÷ Σ actual − 1) and weighted absolute error (Σ |f − a| ÷ Σ a), split by how much
+  history each entity had. It separated a biased-high planned value, a biased-low running average (ramp-up months) and a
+  hybrid within ±3 % in a few queries, and turned an open "decide" question into a recommendation the owner accepted.
