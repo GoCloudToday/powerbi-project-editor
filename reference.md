@@ -2959,3 +2959,21 @@ selector frozen to a parameter, and — after the operator rejected a regenerate
   revenue-weighted bias (Σ forecast ÷ Σ actual − 1) and weighted absolute error (Σ |f − a| ÷ Σ a), split by how much
   history each entity had. It separated a biased-high planned value, a biased-low running average (ramp-up months) and a
   hybrid within ±3 % in a few queries, and turned an open "decide" question into a recommendation the owner accepted.
+
+### 2026-09-15 round 4 (a transported report's filter aliases and dead selectors; the self-audit that passed them)
+
+- **When a field map moves a field to ANOTHER table, the filter's `From` entry must follow it.** A visual filter
+  `{field: 'Old'[CountExcluded], filter: {From: [{Name: c, Entity: Old}], Where: c.CountExcluded = 1}}` was rewritten
+  field by field: the `field` node and the `Where` property became `'Input Table'[Is Excluded]` (the measure's new home
+  table), but the `From` entries were mapped by the ENTITY DEFAULT (`Old` → `Fact`), so the condition read
+  `'Fact'[Is Excluded]`, a measure that table does not have (1 visual + 6 bookmark snapshots). Rule: while rewriting a
+  `{From, Where}` block, collect the target table of every alias-sourced field and set each `From` entity from those
+  (log a conflict when one alias would serve two tables); use the entity default only for aliases no field decided.
+- **A gate that resolves only direct `SourceRef.Entity` references is blind to alias-sourced conditions and to
+  `selector.metadata`.** The transport's own audit reported 2,305 references / 0 unresolved. An independent checker
+  (Rule 7: no shared code) that also resolved `From` aliases, hierarchies and levels, `queryRef` and selector strings and
+  field-parameter literals found 25: the alias case above, plus 16 selectors on 8 KPI cards naming a table that exists in
+  NEITHER model (inherited from the source report; inert, they matched no projection). After the fix, and dropping
+  selectors whose table is not in the target model: self-audit 2,619 / 0, independent 2,873 / 0, and a file diff against
+  the previous output changed exactly the 15 expected files (6 bookmarks, 8 cards, 1 table visual). In the desktop app the
+  bookmark view showing that table listed only the excluded rows.
