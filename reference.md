@@ -2881,7 +2881,7 @@ selector frozen to a parameter, and — after the operator rejected a regenerate
 ### 2026-09-15 round 2 (retiring features from a transported report; embedding a dummy source; measure-driven card labels)
 
 - **Field-parameter literals hide in FILTERS too, and a stale one renders as "no filter".** The 2025 Level selector of
-  one view carried a visual filter `Not In ('''Accounts_Source''[dsv_accountname]')` (hide the *Account* level) plus the
+  one view carried a visual filter `Not In ('''Accounts_Source''[accountname]')` (hide the *Account* level) plus the
   same literal in 13 bookmark snapshots (28 occurrences). The generic field rewriter cannot see them (they are string
   Values, not Column nodes), so after the transport the filter matched nothing and four tiles squeezed into a
   three-tile-wide button slicer — the symptom looked like a sizing bug. Rule: keep an explicit literal map
@@ -2977,3 +2977,41 @@ selector frozen to a parameter, and — after the operator rejected a regenerate
   selectors whose table is not in the target model: self-audit 2,619 / 0, independent 2,873 / 0, and a file diff against
   the previous output changed exactly the 15 expected files (6 bookmarks, 8 cards, 1 table visual). In the desktop app the
   bookmark view showing that table listed only the excluded rows.
+
+
+### 2026-09-20 (scaffolding a second PBIP from a sibling: generator traps, and what a view bookmark does NOT do)
+
+Built a report+model PBIP by hand (16 tables, 62 measures, 37 visuals, 2 view bookmarks, dummy data embedded as
+base64 CSV) using a sibling project's metadata as the template. New findings, all measured on this run:
+
+- **A bookmark that hides half a page does not set the page's own state.** Every visual a "view" bookmark hides must
+  ALSO carry `"isHidden": true` in its own visual.json, or the saved page opens with both views stacked on top of
+  each other (the bookmarks themselves worked the moment they were clicked). The bookmark files stay as before:
+  hidden visuals get `display.mode = "hidden"`, visible ones get no display node at all.
+- **Formatting property names that differ from the obvious guess** (found by diffing a Desktop-written sibling):
+  a table's totals toggle is `total.totals`, not `total.show`; matrix row headers use
+  `rowHeaders.showExpandCollapseButtons`; `subTotals` carries `applyToHeaders` with `selector.id = "Row"`. Unknown
+  property names are ignored silently, so a wrong guess is a cosmetic no-op rather than a load error - which also
+  means a generator cannot be trusted on look without a rendered screenshot (Rule 8's sibling).
+- **A scaling format string collides with the visual's own display units.** A measure formatted
+  `#,##0.0,,"M";-#,##0.0,,"M";-` rendered on a card as `42.5,,MM`: the scaling commas printed literally AND the
+  card's Auto display units appended their own M. Let exactly one of the two scale - here `labelDisplayUnits`
+  (1000000) plus `labelPrecision` on the card and a plain `#,##0` on the measure.
+- **Two PowerShell generator traps, each worth a debugging cycle.** An array literal written one element per line
+  UNROLLS nested arrays: `@( @(a,b)<newline>@(c,d) )` yields four scalars, not two arrays (seed rows silently became
+  loose strings and only failed 100 lines later on a null hashtable index). Put a comma at the end of every line but
+  the last, or build the list with `foreach`. And a function parameter named `$view` SHADOWS a script-scope `$View`
+  hashtable, because PowerShell variable names are case insensitive - the symptom is
+  "Unable to index into an object of type System.String" on the assignment.
+- **A synced folder keeps a handle on `definition\pages` after Desktop closes**, so a generator that deletes the
+  whole definition folder fails half way and leaves a report with no `pages.json`. Clear the CHILDREN of `pages`
+  and `bookmarks` with retries (8 x 2 s here) and never the folders themselves.
+- **`Get-Process LogonUI` is not a reliable lock test.** It was present for the whole session, yet Desktop opened,
+  attached the model (16 tables in 11 s) and refreshed in 6 s. The dependable signal is the window title:
+  "Untitled - Power BI Desktop" while it loads, the project name once the model is attached. Poll the title, not
+  LogonUI, before deciding a launch failed.
+- Offline gates that caught everything before Desktop saw the project: TOM `DeserializeDatabaseFromFolder` (it
+  rejects a `///` description above a `relationship` with "Property 'description' is unknown"), plus an independent
+  walker resolving every (Entity, Property) binding, every `queryRef` against its own field, every
+  `selector.metadata` against that visual's own projections, and every bookmark and interaction visual name
+  (37 visuals, 80 bindings, 44 selectors, 10 interactions, 0 problems).
