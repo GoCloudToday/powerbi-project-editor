@@ -3060,31 +3060,32 @@ Fetch it once and query it offline; Learn's format-pane articles name the UI lab
   `grid = (TableGrid 3)` stores a hashtable where PBIR requires an array, and the card is dropped silently. The
   generator's own audit (every member of `objects`/`visualContainerObjects` must be `IList`) caught 11 of these.
 
-#### 2026-09-21 round 2 (where a table's row colours actually live, measured cell by cell)
+#### 2026-09-21 round 2 (conditional cell colours: the selector needs a data wildcard - measured cell by cell)
 
 The same page, re-rendered and pixel-sampled after every build (`GetPixel` over the cell rectangle in the
-screenshot, reported as hex - eyes cannot tell `#0A34A1` from `#000000` at 9 pt).
+screenshot, reported as hex - eyes cannot tell `#0A34A1` from `#000000` at 9 pt, and a selected row dims the whole
+visual, which looks exactly like a colour that failed to apply).
 
-- **A table's row style is FOUR properties, and `fontColor` is not one of them.** Desktop writes the Values card
-  as `backColorPrimary` / `backColorSecondary` / `fontColorPrimary` / `fontColorSecondary` (verified against a
-  Desktop-authored matrix in a sibling project). A card that sets a plain `fontColor` leaves the rows the theme's
-  foreground - on a theme whose `foreground` is a brand colour, every figure in the table renders in it.
-- **Leaving the four out hands the whole card back to the theme**, bands and text colour together. There is no
-  "partial" Values card: state all four, or expect the theme's style preset.
-- **The default Values entry outranks the per column conditional entries.** With the four properties set, a
-  `values` entry carrying `fontColor`/`backColor` from a measure (`selector.metadata = "Table.Measure"`) did not
-  render at all. Remove the default entry and the SAME conditional entry renders. So a table that needs
-  conditional cell colours cannot also carry banded rows: pick one.
-- **Conditional colours reach leaf rows only.** In a matrix, a region or cluster row is a subtotal row: the
-  conditional font colour rendered on the country rows (`#0A34A1` measured) while every parent row stayed at the
-  subtotal styling (`#000000`).
-- **Repeating the same measures in `columnFormatting` DOES reach every row, but with the wrong value.** Adding
-  `fontColor`/`backColor` there alongside `styleValues`/`styleSubtotals`/`styleTotal` coloured parents and leaves
-  alike - all of them with the measure's "nothing set here" branch (`#6B6A69` on every cell, including the leaf
-  that had just rendered `#0A34A1` through `values`). The measure is evaluated once for the COLUMN, not per row.
-  Keep conditional colours in `values`; leave `columnFormatting` to alignment, display units and precision.
-- Corollary for generators: assert rendered colour, not JSON shape. Every one of these passed a binding/selector
-  audit and a TOM parse; only the pixels showed which card won.
+- **A per cell colour needs `selector.data = [{dataViewWildcard: {matchingOption: N}}]` next to `metadata`.** With
+  `metadata` alone the entry addresses the COLUMN, and the colour measure is evaluated once for the whole column: a
+  "changed today" `backColor` never turned a single cell green, and the same measures placed in
+  `columnFormatting` painted every cell with one colour. Adding the wildcard - the shape Desktop writes for every
+  field-value rule (checked against 168 Desktop-authored selectors on the machine) - made the measure evaluate per
+  cell: `#DFF2D2` on exactly the changed cell, `#FFFFFF` beside it.
+- **`matchingOption`: 1 = values only, 0 = values AND totals.** In a stepped matrix the region and cluster rows are
+  subtotal rows; with 1 (or no wildcard) they kept the subtotal styling, with 0 the rule ran on them too, per row:
+  a region with its own target came out `#0A34A1`, one summed from its countries `#6B6A69`, the grand total `#6B6A69`.
+  Desktop uses 0 on single-value cards, where the only value IS the total.
+- **With the wildcard, banded rows and conditional colours coexist.** Before it, removing the banding looked like it
+  "unblocked" the conditional font colour on leaf rows, which read as "the default entry outranks the conditional
+  one" - that conclusion was wrong: the default entry simply stops hiding a column-level colour that was never per
+  cell. Band colour `#F7F8FA` and the green cell rendered side by side once the selector was right.
+- **A table's row style is FOUR properties, and `fontColor` is not one of them.** Desktop writes the Values card as
+  `backColorPrimary` / `backColorSecondary` / `fontColorPrimary` / `fontColorSecondary`. A card with only a plain
+  `fontColor` leaves the rows in the theme's foreground (a brand blue here), and leaving all four out hands bands and
+  text colour back to the theme preset.
+- Corollary for generators: assert rendered colour, not JSON shape. Every broken variant passed a binding/selector
+  audit and a TOM parse; only the pixels showed which rule applied.
 
 ### 2026-09-21 round 3 (publish fails: "Part URI is not valid per rules defined in the Open Packaging Conventions specification")
 
