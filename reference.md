@@ -3085,3 +3085,35 @@ screenshot, reported as hex - eyes cannot tell `#0A34A1` from `#000000` at 9 pt)
   Keep conditional colours in `values`; leave `columnFormatting` to alignment, display units and precision.
 - Corollary for generators: assert rendered colour, not JSON shape. Every one of these passed a binding/selector
   audit and a TOM parse; only the pixels showed which card won.
+
+### 2026-09-21 round 3 (publish fails: "Part URI is not valid per rules defined in the Open Packaging Conventions specification")
+
+A hand-built PBIP opened, refreshed and rendered fine, then failed at Publish with exactly:
+`An error occurred while attempting to publish '<name>.pbip': Part URI is not valid per rules defined in the Open
+Packaging Conventions specification.` Cause and proof:
+
+- **Publishing packs the report folder into a .pbix, an OPC zip, and turns each file path into a part name WITHOUT
+  escaping it.** One file had a space in its name: the custom theme at
+  `StaticResources/RegisteredResources/<Two Words> theme.json`, named by the generator. Every Desktop-authored
+  project on the machine (and every report downloaded from the service) stores the same kind of resource as
+  `<Two_Words><digits>.json` - Desktop replaces spaces itself, which is why this never shows up in Desktop-made files.
+- **Reproduce it offline with the real packaging API** (Windows PowerShell 5.1, `Add-Type -AssemblyName WindowsBase`):
+  open a `System.IO.Packaging.Package` on a `MemoryStream` and call
+  `CreatePart([Uri]::new('/Report' + <relative path with />, 'Relative'), 'application/json')` for every file under the
+  `.Report` folder. The raw (unescaped) call threw for exactly one file, the theme with the space, while
+  `PackUriHelper.CreatePartUri` (which escapes first) accepted it - the difference is the whole bug. After renaming:
+  0 failures of 51 files.
+- **The fix has three parts, and missing one keeps it broken:** rename the file; update the THREE references in
+  `definition/report.json` (`themeCollection.customTheme.name`, and `resourcePackages[RegisteredResources].items[].name`
+  and `.path`); DELETE the old file, because every file under the folder is packed whether or not report.json names it.
+  Then close Desktop and reopen it: publishing from a session that loaded the old name re-saves the old name first.
+- **Publish saves before it packs.** The failed publish had rewritten both the report and the model folders a minute
+  earlier (schema versions bumped, explorationState version normalised, unknown properties dropped, slicer selections
+  persisted). Diff that save against a fresh generator build before regenerating over it, so a user's real edits are
+  not lost: here it held only normalisation and state.
+- **Gate:** a name check in the independent report audit - every path segment under `.Report` must match
+  `^[A-Za-z0-9\-._~!$&'()*+,;=:@]+$` and must not end with a dot. Calibrated: it failed on the broken file before
+  the fix and passed after. The same audit also learned to resolve `From` aliases (`SourceRef.Source = 'c'` ->
+  `From[{Name:'c', Entity:'T'}]`) in the slicer selections Desktop saves, which otherwise read as missing fields.
+- Found along the way: `bookmarks.showLine` is not a bookmark navigator property (Desktop drops it on save), and
+  Desktop rewrites `columnHeaders.autoSizeColumnWidth` to `true` on tables that carry explicit `columnWidth` entries.
