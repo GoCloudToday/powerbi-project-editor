@@ -3049,8 +3049,9 @@ Fetch it once and query it offline; Learn's format-pane articles name the UI lab
   `singleSelect = true, strictSingleSelect = false` selects on one click and clears on a second.
 - **The matrix renders its grand total row even when every measure in it is blank**, so an "empty state" matrix
   shows a lone "Total" under the headers while a `tableEx` shows nothing. `subTotals.rowSubtotals = false`
-  removes it, but in the stepped (compact) layout the parent rows ARE subtotal rows, so it can blank the parent
-  figures too: verify in Desktop before shipping it.
+  removes it - and MEASURED: in the stepped (compact) layout it also blanks every parent row, because a region or
+  cluster row IS a subtotal row there. If those parent figures are the ones users read or type into, keep the
+  grand total row and live with the lone "Total".
 - **`Verify-Desktop`-style wrappers that refuse to run while `LogonUI` exists are over-cautious** (see the
   previous entry), but a LOCKED session does break one channel: `CaptureScreen` returns an all-black bitmap and
   `wnd.Activate` throws. DMV/TMSL/DAX over the engine port keep working, so verification that must survive a lock
@@ -3058,3 +3059,29 @@ Fetch it once and query it offline; Learn's format-pane articles name the UI lab
 - PowerShell, again: a helper that returns ONE formatting card must be called as `@(Helper ...)`. Assigning
   `grid = (TableGrid 3)` stores a hashtable where PBIR requires an array, and the card is dropped silently. The
   generator's own audit (every member of `objects`/`visualContainerObjects` must be `IList`) caught 11 of these.
+
+#### 2026-09-21 round 2 (where a table's row colours actually live, measured cell by cell)
+
+The same page, re-rendered and pixel-sampled after every build (`GetPixel` over the cell rectangle in the
+screenshot, reported as hex - eyes cannot tell `#0A34A1` from `#000000` at 9 pt).
+
+- **A table's row style is FOUR properties, and `fontColor` is not one of them.** Desktop writes the Values card
+  as `backColorPrimary` / `backColorSecondary` / `fontColorPrimary` / `fontColorSecondary` (verified against a
+  Desktop-authored matrix in a sibling project). A card that sets a plain `fontColor` leaves the rows the theme's
+  foreground - on a theme whose `foreground` is a brand colour, every figure in the table renders in it.
+- **Leaving the four out hands the whole card back to the theme**, bands and text colour together. There is no
+  "partial" Values card: state all four, or expect the theme's style preset.
+- **The default Values entry outranks the per column conditional entries.** With the four properties set, a
+  `values` entry carrying `fontColor`/`backColor` from a measure (`selector.metadata = "Table.Measure"`) did not
+  render at all. Remove the default entry and the SAME conditional entry renders. So a table that needs
+  conditional cell colours cannot also carry banded rows: pick one.
+- **Conditional colours reach leaf rows only.** In a matrix, a region or cluster row is a subtotal row: the
+  conditional font colour rendered on the country rows (`#0A34A1` measured) while every parent row stayed at the
+  subtotal styling (`#000000`).
+- **Repeating the same measures in `columnFormatting` DOES reach every row, but with the wrong value.** Adding
+  `fontColor`/`backColor` there alongside `styleValues`/`styleSubtotals`/`styleTotal` coloured parents and leaves
+  alike - all of them with the measure's "nothing set here" branch (`#6B6A69` on every cell, including the leaf
+  that had just rendered `#0A34A1` through `values`). The measure is evaluated once for the COLUMN, not per row.
+  Keep conditional colours in `values`; leave `columnFormatting` to alignment, display units and precision.
+- Corollary for generators: assert rendered colour, not JSON shape. Every one of these passed a binding/selector
+  audit and a TOM parse; only the pixels showed which card won.
