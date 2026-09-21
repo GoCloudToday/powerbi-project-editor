@@ -3015,3 +3015,46 @@ base64 CSV) using a sibling project's metadata as the template. New findings, al
   walker resolving every (Entity, Property) binding, every `queryRef` against its own field, every
   `selector.metadata` against that visual's own projections, and every bookmark and interaction visual name
   (37 visuals, 80 bindings, 44 selectors, 10 interactions, 0 problems).
+
+### 2026-09-21 (styling a hand-generated report: the theme JSON schema as the property dictionary)
+
+The generated page from the previous entry was rendered, screenshotted and fixed defect by defect. Every property
+name below was taken from `microsoft/powerbi-desktop-samples`, `Report Theme JSON Schema/reportThemeSchema-2.157.json`,
+not guessed. That file is the only complete dictionary of formatting cards: for a visual type it resolves to
+`definitions/visual-<type>`, an `allOf` of `commonCards` (title, border, background, padding, visualHeader,
+subTitle, divider, spacing, general) plus the type's own cards, and each card lists its properties with enums.
+Fetch it once and query it offline; Learn's format-pane articles name the UI labels, not the JSON keys.
+
+- **A wrong property name is silent, and so is a wrong enum VALUE.** `columnFormatting.alignment` takes
+  `'Auto' | 'Left' | 'Center' | 'Right'`; lower case `'right'` is accepted into the JSON and ignored at render.
+  The slicer's text size is `textSize`, not `fontSize`. Check the schema's `oneOf` list, not just the key.
+- **The base theme draws a border and a fill around every card visual.** Switching the container's `background`
+  off leaves them: the card's own cards are `outline` (per card border, `selector.id = 'default'`) and
+  `fillCustom`. Until both are off, every KPI strip and text card sits in a stray rectangle.
+- **A card visual needs about 50 px of height for a value plus a label.** At 26 px the label renders BELOW the
+  container and is clipped by whatever sits under it; there is no warning and no overflow setting that helps.
+  Two stacked 26 px cards do not substitute: give the single card the height.
+- **An empty string from a label measure is not "no label".** The card falls back to the field's display name,
+  so a band meant to read "Europe (region)" over a hint read "Selected row". Any measure feeding
+  `label.text` must return a sentence in every state; assert that with a DAX probe that walks the states
+  (`UNION` of `CALCULATETABLE(ROW(...), <one filter per state>)`) rather than by eye.
+- **Column widths that add up to the visual width produce a horizontal scrollbar** on `tableEx` and `pivotTable`,
+  because the container's own padding is outside the sum. Leave ~30 px. A generator should assert the sum.
+- **Conditional disabled states for a button are a measure, not a state selector.** `fill.fillColor` accepts
+  `{solid:{color:{expr:{Measure:...}}}}`, so one measure returning two hex strings gives a button that reads as
+  disabled; `selector.id = 'disabled'` only applies when the button itself is disabled by an action, which a
+  data-function button never is.
+- **A slicer hierarchy costs three clicks per pick.** Four `CProjLevel` projections (SelectAll, Region, Cluster,
+  Country) render as a tree the user must expand three times. A single flat column with
+  `singleSelect = true, strictSingleSelect = false` selects on one click and clears on a second.
+- **The matrix renders its grand total row even when every measure in it is blank**, so an "empty state" matrix
+  shows a lone "Total" under the headers while a `tableEx` shows nothing. `subTotals.rowSubtotals = false`
+  removes it, but in the stepped (compact) layout the parent rows ARE subtotal rows, so it can blank the parent
+  figures too: verify in Desktop before shipping it.
+- **`Verify-Desktop`-style wrappers that refuse to run while `LogonUI` exists are over-cautious** (see the
+  previous entry), but a LOCKED session does break one channel: `CaptureScreen` returns an all-black bitmap and
+  `wnd.Activate` throws. DMV/TMSL/DAX over the engine port keep working, so verification that must survive a lock
+  belongs in DAX probes, not in screenshots.
+- PowerShell, again: a helper that returns ONE formatting card must be called as `@(Helper ...)`. Assigning
+  `grid = (TableGrid 3)` stores a hashtable where PBIR requires an array, and the card is dropped silently. The
+  generator's own audit (every member of `objects`/`visualContainerObjects` must be `IList`) caught 11 of these.
