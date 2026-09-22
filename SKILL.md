@@ -38,9 +38,15 @@ keep/kill graph, gate, deleters, fingerprint suite) is worth carrying per repo u
    257 columns left every measure value identical and made a "Show items with no data"
    visual go 2s → 150s timeout. Perf acceptance = replay the CAPTURED Desktop query
    (`$SYSTEM.DISCOVER_COMMANDS` while the visual renders) verbatim, A/B.
-7. **Checkers must not share code with the thing they check**, and must be calibrated:
-   the gate must FAIL a known-bad input; integrity must PASS a known-good model —
-   before either verdict is trusted. Never chain gate→apply unconditionally.
+7. **Checkers must not share code with the thing they check**, and must be calibrated
+   on THREE cases, not two: the gate must FAIL a known-bad input, PASS a known-good
+   model, and FAIL when a lookup it depends on MISSES. A missing key is the sneaky
+   third state: the loop under it walks nothing, so the check is vacuous rather than
+   wrong and it prints like a pass (a bookmark whose section key did not match the
+   page reported `0 hidden of 0`; an expected-value table with no entry for the
+   actual type printed a clean success line for a pairing it never compared). Every
+   lookup miss must be reported as UNVERIFIED, and a summary line must say UNVERIFIED
+   rather than 0. Never chain gate->apply unconditionally.
 8. **The frontend attaches by strings, and fails silently.** Conditional formatting
    (RAG icons, backColor/fontColor, webURL), columnWidth, alignment and bars-only
    settings bind via `selector: {metadata: "Table.Object"}` STRINGS that must equal
