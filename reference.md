@@ -3165,5 +3165,16 @@ dressed as a pass. Found in a parallel project's expected-type table, then repro
   instead of crashing on a path built from an empty name), the navigator visual deleted (caught, 3 problems,
   including the new "bookmarks.json declares 1 group but no navigator points at one"), and every `display` node
   renamed so the bookmark hides nothing (caught, 1 problem). Real project: 0 problems before and after.
+- **The vacuous pass has two mechanisms, and the second is harder to see.** A null lookup that falls into an
+  `else` leaves a branch to inspect; an EMPTY COLLECTION whose `foreach` walks nothing does not, so the code
+  reads as though it checks something. Both gates on this tenant were then calibrated against the mechanism
+  each one lacked. Here, four empty-collection mutations: no visual.json anywhere gives 100 problems beside
+  `visuals: 0`; every table .tmdl deleted gives 86 problems beside `model: 0 tables`; plus the two bookmark
+  cases. On the parallel gate, three: an empty page folder, an emptied parameter array, deleted model tables,
+  all caught, because every collection there already had a guard above it.
+- **Print the scale next to the verdict.** `checks run: 0` beside `problems: 1` reads as "it failed early";
+  `checks run: 0` beside `problems: 0` IS the vacuous pass, and it is only visible because the counter is
+  there. A gate needs both: a counter for every collection it walks, and the word UNVERIFIED wherever a check
+  could not run.
 - Rule of thumb now in Rule 7: calibrate a gate on three inputs, not two - known-bad, known-good, and lookup miss.
   Where a check cannot run, the word to print is UNVERIFIED; a count of 0 is not a result.
