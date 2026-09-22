@@ -3146,3 +3146,24 @@ written down; the rest is recorded as reported, because it needed a tenant this 
   A measure-driven fill therefore only shows when the button is live.
 - Composite first open shows two banners ("relationships modified", "tables have incomplete or no data") and a
   dual-table slicer reads (Blank) until one refresh - expected, not a broken model.
+
+#### 2026-09-22 round 2 (the vacuous pass: a gate whose lookup misses reports success)
+
+Two gates on the same tenant, written independently, had the same hole: a check keyed on a lookup printed a clean
+line when the KEY was absent, because the loop under it had nothing to walk. Not a wrong answer, an absent one
+dressed as a pass. Found in a parallel project's expected-type table, then reproduced and fixed here.
+
+- The shape to look for: `$want = $table[$key]` followed by `if ($want -and $actual -ne $want) { problem }
+  else { "ok" }`, or `$node = $tree[$key]` followed by `foreach ($x in $node.Keys) { ... }`. When `$key` is not in
+  the table, the first prints success and the second iterates zero times, then a summary line says `0 of 0`.
+- Found here in a report audit: `$b.explorationState.sections[$pageName].visualContainers` for a view bookmark.
+  Rename the section key and the gate said `bookmark 'X': 0 hidden of 39` with `problems: 0` - exactly what a
+  broken view switch looks like. Fixed to report the miss ("carries no section '<page>' (it has: ...), so its
+  visual states are UNVERIFIED") and to fail when a view bookmark hides nothing at all.
+- Calibrated on four mutations after the fix, each in a throwaway copy of the project: section key renamed
+  (caught, 2 problems), `pageOrder` emptied (caught, 4 problems, and the page-level block now reports UNVERIFIED
+  instead of crashing on a path built from an empty name), the navigator visual deleted (caught, 3 problems,
+  including the new "bookmarks.json declares 1 group but no navigator points at one"), and every `display` node
+  renamed so the bookmark hides nothing (caught, 1 problem). Real project: 0 problems before and after.
+- Rule of thumb now in Rule 7: calibrate a gate on three inputs, not two - known-bad, known-good, and lookup miss.
+  Where a check cannot run, the word to print is UNVERIFIED; a count of 0 is not a result.
