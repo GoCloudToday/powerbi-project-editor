@@ -3118,3 +3118,31 @@ Packaging Conventions specification.` Cause and proof:
   `From[{Name:'c', Entity:'T'}]`) in the slicer selections Desktop saves, which otherwise read as missing fields.
 - Found along the way: `bookmarks.showLine` is not a bookmark navigator property (Desktop drops it on save), and
   Desktop rewrites `columnHeaders.autoSizeColumnWidth` to `true` on tables that carry explicit `columnWidth` entries.
+
+### 2026-09-22 (translytical wiring, from a parallel build; the parts I re-verified myself are marked)
+
+A second project built the writeback loop this one only stubbed. Two of its claims were checked here before being
+written down; the rest is recorded as reported, because it needed a tenant this session did not touch.
+
+- **VERIFIED HERE - `mode: dual` is valid TMDL and mixes with `directQuery` and `import` in one model.** The same
+  offline TOM gate that validates a pure import model deserialized a three-table composite (DirectQuery fact,
+  dual shared dimension, import table) with 0 problems and both relationships resolved. Dual on the shared
+  dimension is what keeps BOTH relationships regular rather than limited; a pure import dimension beside a
+  DirectQuery fact gives a limited relationship.
+- **VERIFIED HERE - the user data function `definition.json` schema** at
+  `developer.microsoft.com/json-schemas/fabric/item/userDataFunction/definition/1.1.0/schema.json` (reachable from
+  a machine where learn.microsoft.com is not) holds exactly `connectedDataSources` (`alias`, `artifactId`,
+  `artifactType`, `dmtsConnectionId`, `workspaceId`), `functions` (`name`, `description`,
+  `isPublicEndpointEnabled`), `libraries` (`public` / `private`, items `name` / `type` PYPI|WHEEL / `version`) and
+  `runtime` (`NOTASSIGNED` | `DOTNET` | `PYTHON`). Nothing is `required`, and `artifactType` is a free string, so a
+  typo in it passes validation and fails later.
+- REPORTED: publishing such an item through `updateDefinition` needs only `definition.json` and `function_app.py`;
+  the service generates the rest and adds its own runtime library. 202 then about 100 s to Succeeded. Declaring the
+  database as a connected data source removes the portal connection step for the connection decorator. Parameter
+  names are camelCase without underscores (function names may have them); `req`, `context`, `reqInvocationId` are
+  reserved; the REST invoke path is not reachable from the item API, so test by pressing the button.
+- REPORTED, and worth knowing before chasing a "styling bug": a data-function button is drawn in Power BI's own
+  disabled grey while a required parameter is unsatisfied, overriding the `fill` set for `selector.id: 'default'`.
+  A measure-driven fill therefore only shows when the button is live.
+- Composite first open shows two banners ("relationships modified", "tables have incomplete or no data") and a
+  dual-table slicer reads (Blank) until one refresh - expected, not a broken model.
