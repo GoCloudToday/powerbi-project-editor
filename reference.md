@@ -3178,3 +3178,24 @@ dressed as a pass. Found in a parallel project's expected-type table, then repro
   could not run.
 - Rule of thumb now in Rule 7: calibrate a gate on three inputs, not two - known-bad, known-good, and lookup miss.
   Where a check cannot run, the word to print is UNVERIFIED; a count of 0 is not a result.
+
+### 2026-09-23 (watching a user-driven Desktop refresh; proving a surprising value is the source's, not the model's)
+
+- **A refresh watcher fired on its first poll while no refresh had run.** It compared each key partition's
+  `TMSCHEMA_PARTITIONS.RefreshedTime` with a baseline typed from an earlier console print (`dd/MM/yyyy HH:mm:ss`).
+  The DMV value carries sub-second precision (ticks ending `...5200000` = `.52` s), so `stored > typed` was true from
+  the start and the watcher printed REFRESHED + DONE within 20 s. Fix: read the baseline FROM THE DMV when the
+  watcher starts (`RefreshedTime.Ticks`), detect `-ne`, and print the baseline ticks as the first line. The fixed
+  watcher waited 22 min and fired on the real commit, both key tables together. Rule 7 applies to watchers too:
+  calibrate that the first poll does NOT fire.
+- A Desktop refresh commits at the end: partition `State` stays 1 throughout, so state polling cannot show
+  progress; `RefreshedTime` changing is the completion signal. With two Desktop instances there are two msmdsrv
+  processes; pick the port whose msmdsrv PARENT PBIDesktop window title is the project name.
+- **"Is this odd number the model or the data?"** Rebuild the one figure from the RAW export, independently of
+  the model's M (here a multi-level BOM explosion x latest active cost price): it reproduced the model's per-unit
+  material cost to the cent for three products (three currencies), which moved the question to the source. The
+  source cause was entered prices whose price quantity changed between costing versions (per 1,000 -> per 1),
+  i.e. the unit price jumped ~1,000x while PRICE itself barely moved. Screen for it by comparing each item's
+  newest ENTERED price per unit (PRICE / PRICEQUANTITY) with its previous version's and listing moves > 10x or
+  < 0.1x; a calculation-number field separated calculated prices (inflated through bad overhead rates, 9-26x,
+  so no single divisor repairs them) from entered ones exactly.
