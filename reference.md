@@ -3257,3 +3257,33 @@ DAX probes over the local engine and screenshots.
   line of measure text an `actionButton` with no `visualLink` renders cleanly: `text` default selector with the
   measure as `text`, `horizontalAlignment` and `verticalAlignment: 'middle'` (names read from Desktop-authored
   buttons), `fill` and `outline` `show: false`. A measure returning "" shows nothing.
+
+### 2026-09-27 (a headless Desktop cycle on a network that drops parallel TDS connections)
+
+Same generated composite as §2026-09-26 (Fabric SQL source, dual dimensions, DirectQuery entries), verified through
+headless open / refresh / probe / screenshot cycles after the machine restarted onto a flaky network.
+
+- **"refresh returned" is not "refresh succeeded" - the vacuous pass, XMLA edition.** `Invoke-ASCmd` returned
+  normally after 55-79 s while the reply was a wall of `<Error>` nodes: `OLE DB or ODBC error: [DataSource.Error]
+  Microsoft SQL: A connection was successfully established with the server, but then an error occurred during the
+  login process. (provider: SSL Provider, error: 0 - An existing connection was forcibly closed by the remote
+  host.)` followed by `The current operation was cancelled because another operation in the transaction failed.`
+  A wrapper that prints only the elapsed-time line scored three failed refreshes as three passes, and the capture
+  step then photographed the "incomplete or no data" banner. Rule: after every headless refresh, assert the DATA
+  (a `COUNTROWS` probe on a small import table via the engine port) or the TMSCHEMA_PARTITIONS states; never the
+  return alone.
+- **The failure shape was parallelism, not the endpoint.** Single connections passed the whole time (a SqlClient
+  `SELECT 1`, sequential DAX probes through the engine's DirectQuery). What died were the bursts: the mashup
+  refresh transaction (a dozen TDS connections at once) and a page of DirectQuery visuals rendering together.
+  `{"sequence": {"maxParallelism": 1, "operations": [{"refresh": ...}]}}` still failed on this network - the
+  mashup opens its own parallel connections per evaluation regardless - so the honest mitigations are retries,
+  a data assertion after each attempt, and a stable network for anything visual.
+- **Desktop's error card for a failed DirectQuery visual reads "This might be caused by a capacity or license
+  issue. Contact your admin if the problem continues."** It is generic; nothing about the incident involved
+  capacity or licensing. And it is STICKY: the card survived TWO successful TMSL refreshes and page switches
+  through UIA tab invokes, while the same queries answered cleanly through the engine port. Only the ribbon
+  Refresh button (UIA `Invoke()`, then poll the nameless owned progress window until gone) or reopening the
+  project re-renders the visuals. A screenshot pipeline therefore needs, in order: refresh, an IMPORT-side data
+  assertion with retries, a DirectQuery probe loop until it answers, a ribbon refresh, then the shots.
+- A killed Desktop session never saves, so cache.abf stays at the last manual save: EVERY fresh headless session
+  must really refresh before screenshots, or the shots show the incomplete-data banner over stale schema.
