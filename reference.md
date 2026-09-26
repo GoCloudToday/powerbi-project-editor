@@ -3145,7 +3145,9 @@ written down; the rest is recorded as reported, because it needed a tenant this 
   disabled grey while a required parameter is unsatisfied, overriding the `fill` set for `selector.id: 'default'`.
   A measure-driven fill therefore only shows when the button is live.
 - Composite first open shows two banners ("relationships modified", "tables have incomplete or no data") and a
-  dual-table slicer reads (Blank) until one refresh - expected, not a broken model.
+  dual-table slicer reads (Blank) until one refresh - expected, not a broken model. CORRECTED 2026-09-26: a dual
+  dimension on the one side of a relationship from a DirectQuery table can keep its blank member AFTER the refresh
+  too; see that entry.
 
 #### 2026-09-22 round 2 (the vacuous pass: a gate whose lookup misses reports success)
 
@@ -3199,3 +3201,59 @@ dressed as a pass. Found in a parallel project's expected-type table, then repro
   newest ENTERED price per unit (PRICE / PRICEQUANTITY) with its previous version's and listing moves > 10x or
   < 0.1x; a calculation-number field separated calculated prices (inflated through bad overhead rates, 9-26x,
   so no single divisor repairs them) from entered ones exactly.
+
+### 2026-09-26 (a generated composite writeback report: blank members, security filters, navigation properties)
+
+A three-page report and its model generated from PowerShell: dual dimensions, DirectQuery entry tables and rule
+views, import reference, all from one SQL database; data-function buttons write the entries. Checked in Desktop with
+DAX probes over the local engine and screenshots.
+
+- **A dual dimension on the one side of a DirectQuery relationship exposes its blank member.** Seven verticals:
+  `COUNTROWS(Verticals)` = 7, but `SUMMARIZECOLUMNS(Verticals[Vertical])` returned 8 rows (so did the same call with a
+  constant measure), `COUNTROWS(ALL(Verticals[Vertical]))` = 8 and `VALUES` held a blank, although a SQL anti-join
+  (including NULL keys) found no unmatched key in any related table, and the one import table related to it had no
+  row on the blank member. Setting `relyOnReferentialIntegrity` on all 16 DirectQuery-to-dual relationships of the
+  running model and recalculating did not remove it. Two dual tables related ONLY to DirectQuery tables showed no
+  blank member right after Desktop's refresh (7 and 15 rows) but did after a later Calculate recalc (8 and 16): a
+  clean count proves nothing, the state moves. Symptom: a table visual grouped by the dimension, whose measures
+  `COALESCE` to 0, grew an all-zero line; slicers on these tables list (Blank). Fix that held (screenshot: the line
+  is gone): one hidden report-level filter per dual dimension, "is not blank" written the way the filter pane writes
+  it, in `report.json` `filterConfig.filters`:
+  `{ name, field: <Column>, type: "Advanced", filter: { Version: 2, From: [{ Name: "d", Entity: <table>, Type: 0 }],
+  Where: [{ Condition: { Not: { Expression: { Comparison: { ComparisonKind: 0, Left: <Column via Source "d">,
+  Right: { Literal: { Value: "null" } } } } } } }] }, howCreated: "User", isHiddenInViewMode: true }`.
+  A binding audit that walks only visual.json never sees these filters: walk page.json and report.json filters
+  too (calibration case: a report filter on a missing column, caught).
+- **A probe printer hid the evidence.** `Format-Table | Out-String).TrimEnd()` swallowed the trailing blank row of
+  `EVALUATE VALUES(Verticals[Vertical])`, so the first look said "7 values, no blank". Count rows in DAX
+  (`COUNTROWS(FILTER(VALUES(c), ISBLANK(c)))`), never read a list by eye.
+- **"Failed to load the report" with an activity id only: a query role's `projections` written as an OBJECT.** A
+  PowerShell function that returns `@($oneItem)` hands back the item (the pipeline unwraps one-element arrays), so a
+  one-field slicer's `projections` serialized as `{...}` instead of `[{...}]`. No property is named anywhere (unlike
+  the `visualContainerObjects` case, which names the property). Found by bisecting in Desktop: build variants that
+  omit parts (links, filters, bookmarks) or pages, open each, read the error card through UI Automation, then one
+  minimal one-visual report per visual type; only the slicer variant failed. Fix at the call site
+  (`projections = @($projections)`) and audit that every `queryState` role's `projections` is a list, calibrated
+  with the object form. One-element `visualLink` and `total` arrays had unwrapped the same way and still loaded:
+  wrap every such array at the call site anyway.
+- **Row-level security on dual tables may read only tables of the same source group.** Filters on three dual
+  dimensions that looked the signed-in user up in an IMPORT access table failed the whole load: "Failed to load the
+  report." / "Some security filter expressions have errors." Making the access table dual fixed it; the filters
+  still read it with `CALCULATE(COUNTROWS(access), REMOVEFILTERS(access), access[User] = SignedIn, ...)`.
+- **Role tests on Desktop's local engine.** `Roles=<role>;EffectiveUserName=<UPN>` in an OLE DB connection string
+  fails at Open: "The following system error occurred:  The name provided is not a properly formed account name."
+  Evaluate each role predicate in DAX with the user as a literal instead (the same expression with
+  `LOWER(USERPRINCIPALNAME())` replaced), per test user. `USERPRINCIPALNAME()` on the local engine returned a
+  different identity than the one the data-function calls carried, so labels driven by it ("View only") differ
+  between Desktop and the service.
+- **DirectQuery over `Sql.Database`: turn off navigation properties.** A trace showed hundreds of catalog queries
+  (foreign keys, table lists, version checks) around the real DirectQuery queries. With
+  `Sql.Database(server, db, [CreateNavigationProperties = false])` a warm four-measure KPI query went from 12.7 s to
+  about 1 s. The first query of a Desktop session still took ~50 s (metadata); the partition text changes, so plan
+  the refresh.
+- **A new card (`cardVisual`) with its label hidden sits the value on its bottom edge**: 10 pt bold in a 32 px
+  container cut the descenders ("View only" rendered as "View onlv"; cards of the same type WITH a label rendered
+  their value fine). For one
+  line of measure text an `actionButton` with no `visualLink` renders cleanly: `text` default selector with the
+  measure as `text`, `horizontalAlignment` and `verticalAlignment: 'middle'` (names read from Desktop-authored
+  buttons), `fill` and `outline` `show: false`. A measure returning "" shows nothing.
