@@ -3272,12 +3272,20 @@ headless open / refresh / probe / screenshot cycles after the machine restarted 
   step then photographed the "incomplete or no data" banner. Rule: after every headless refresh, assert the DATA
   (a `COUNTROWS` probe on a small import table via the engine port) or the TMSCHEMA_PARTITIONS states; never the
   return alone.
-- **The failure shape was parallelism, not the endpoint.** Single connections passed the whole time (a SqlClient
-  `SELECT 1`, sequential DAX probes through the engine's DirectQuery). What died were the bursts: the mashup
-  refresh transaction (a dozen TDS connections at once) and a page of DirectQuery visuals rendering together.
-  `{"sequence": {"maxParallelism": 1, "operations": [{"refresh": ...}]}}` still failed on this network - the
-  mashup opens its own parallel connections per evaluation regardless - so the honest mitigations are retries,
-  a data assertion after each attempt, and a stable network for anything visual.
+- **ROOT CAUSE FOUND (same night): a path-MTU black hole, and the fix is one command.** The interface said MTU
+  1500 while the path silently dropped anything above ~1350 bytes WITHOUT returning the fragmentation-needed
+  ICMP (a VM behind a virtual NIC; the black hole sat below the guest). A TLS handshake carries the server's
+  certificate chain in several full-size segments, so TDS died in pre-login or login; small exchanges and
+  sequential single connections often squeaked through on retransmits, which mimicked "flaky network" and even
+  "gateway throttling". Parallelism only correlated (more full-size segments in flight;
+  `sequence.maxParallelism: 1` changed nothing). Diagnosis, 30 seconds: `ping 1.1.1.1 -f -l 1472` then 1400,
+  1350, 1300 - timeouts at the top of the ladder with replies below it, and no "needs to be fragmented" answer,
+  is the black hole. Fix (elevated): `Set-NetIPInterface -InterfaceAlias "<nic>" -AddressFamily IPv4
+  -NlMtuBytes 1350` - parallel bursts went from 0/10-3/10 to 10/10, 10/10 immediately and Desktop's refresh
+  worked again (netsh `set subinterface` answered "Element not found" for the same interface; the cmdlet
+  worked; re-check the MTU after a reboot). Signature worth memorizing: TDS dies during pre-login/login TLS
+  with resets or handshake timeouts while HTTPS APIs stay healthy, worse under parallel load - run the MTU
+  ladder BEFORE blaming credentials, capacity or the endpoint.
 - **Desktop's error card for a failed DirectQuery visual reads "This might be caused by a capacity or license
   issue. Contact your admin if the problem continues."** It is generic; nothing about the incident involved
   capacity or licensing. And it is STICKY: the card survived TWO successful TMSL refreshes and page switches
