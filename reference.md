@@ -3295,3 +3295,16 @@ headless open / refresh / probe / screenshot cycles after the machine restarted 
   assertion with retries, a DirectQuery probe loop until it answers, a ribbon refresh, then the shots.
 - A killed Desktop session never saves, so cache.abf stays at the last manual save: EVERY fresh headless session
   must really refresh before screenshots, or the shots show the incomplete-data banner over stale schema.
+
+#### 2026-09-27 round 2 (three small renderers that only a screenshot catches)
+
+- **A hand-written column with a custom date format needs `annotation PBI_FormatHint = {"isCustom":true}`.**
+  `formatString: dd/mm/yyyy` alone rendered as the LONG date ("Friday, May ...") in tableEx visuals after a
+  rebuild, while a `dd/mm/yyyy hh:nn` datetime column formatted fine; adding the hint Desktop itself writes for
+  custom formats fixed every date column in one go. Numeric formatStrings on MEASURES keep working without it.
+- **DAX `FORMAT(x, "0.#")` emits a trailing decimal point on whole numbers** ("102."), and `FORMAT(x/100, "0.#%")`
+  renders "110.%". For percent text in a label measure use `FORMAT(x, "General Number") & "%"` - 102 -> "102%",
+  104.5 -> "104.5%".
+- **A tableEx with no background lets whatever sits BEHIND it show through below its last row.** A one-row table
+  over a "select a country" placeholder note read as both at once. Tables that sit over such notes need an opaque
+  white `visualContainerObjects.background`, not `show: false`.
