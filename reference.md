@@ -3308,3 +3308,46 @@ headless open / refresh / probe / screenshot cycles after the machine restarted 
 - **A tableEx with no background lets whatever sits BEHIND it show through below its last row.** A one-row table
   over a "select a country" placeholder note read as both at once. Tables that sit over such notes need an opaque
   white `visualContainerObjects.background`, not `show: false`.
+### 2026-10-06 (a screenshot audit of a generated translytical report: merged rows, zero cards, defaulted rows, inputs under columns)
+
+Same generated composite as §2026-09-26 (SQL source, dual dimensions, DirectQuery entries, data-function buttons),
+audited page by page and bookmark by bookmark from headless Desktop screenshots on real data. Every finding below was
+invisible to the binding, TMDL and button gates (all at 0 problems before and after).
+
+- **A table visual groups by every shown column, so source rows with identical shown values become ONE row.** The
+  source held 12 copies of one contract (same name, dates and amount) and pairs of different accounts with the same
+  name in one country. The visible signature: in a column whose names are links, exactly one name was NOT
+  underlined - its URL measure's `HASONEVALUE(T[Id])` was false on the merged row. The silent consequence: the input
+  band's selection measures (`IF(ISFILTERED(T[Name]) && HASONEVALUE(T[Id]), SELECTEDVALUE(T[Id]))`) return BLANK for
+  a merged row, so the band falls back to its nothing-selected meaning (here: save for every account of the
+  country) while the user believes one row is picked. Fix in the source view: make the shown name unique within
+  the visual's filter scope, `CASE WHEN COUNT(*) OVER (PARTITION BY <scope cols>, Name) > 1 THEN CONCAT('(',
+  ROW_NUMBER() OVER (PARTITION BY <scope cols>, Name ORDER BY <dates>, Id), ') ', Name) ELSE Name END`. Put the
+  number IN FRONT: a suffix disappeared behind the column's ellipsis on long names, leaving identical-looking lines.
+  Timings of the DirectQuery view unchanged (150-350 ms over ~9k rows). Audit query: `GROUP BY <scope cols>, Name
+  HAVING COUNT(*) > 1` must return nothing; here 46 rows were numbered.
+- **The new card visual draws 0 as "0.0".** With `labelDisplayUnits` auto (0) and `labelPrecision` 1 (wanted, so
+  1.3M keeps its decimal) a zero, and any value under 1,000, gets the decimal. Return BLANK for zero
+  (`VAR v = <expr> RETURN IF(v = 0, BLANK(), v)`) and the card shows its blank placeholder, like cards whose measure
+  is already blank on the same report.
+- **A source view that always yields a defaulted row hides "is this the default?" from DAX.** `COALESCE(own, 100)`
+  in the view gave every country a value, so `IF(ISBLANK(MAX(T[Pct])), " (default)")` never fired and a label said
+  "100%" where it should have said "100% (default)". Carry an `IsOwn` flag next to the defaulted value and test it.
+- **Inputs under table columns: compute their x from the same width list that writes `columnWidth`.** A helper
+  that walks the table's column list (x = table x + widths before the named column; box inset 4 px each side, titled
+  like the header and right-aligned) put every input box under its column on four tables in one change, and keeps
+  them there when widths change. The hard-coded positions it replaced sat under unrelated columns. Verified by
+  screenshot: a tableEx with container padding 0 starts its first column at the visual's x.
+- **A bold selected label in a bookmark navigator is wider than the unselected one.** Seven buttons at 9 pt: a
+  26-character label that fit unselected wrapped onto two lines once selected. `text` with selector `selected`,
+  `bold: false` (the fill already marks the selection) fixed it.
+- **Names as links in a tableEx**: an `objects.values[]` entry `{ properties: { webURL: { expr: <Measure> } },
+  selector: { data: [{ dataViewWildcard: { matchingOption: 1 } }], metadata: "<Table>.<Column>" } }`, with the URL
+  measure returning the link only when `HASONEVALUE(<Id>)` and carrying `dataCategory: WebUrl` in TMDL. The name
+  renders underlined and opens the record; no separate link column. (See the first bullet for when it does not.)
+- **A hierarchy slicer's saved selection is a PATH.** After a data reload renamed a parent member (a cluster), the
+  persisted path matched nothing: the page went blank and the tree showed a tick under a parent that no longer
+  existed. The service keeps that state per user across republishing; "Reset to default" or picking again fixes
+  it. Expect it after any reload that renames members above the selected level.
+- Column widths cannot be locked. Fixed widths with auto-size off hold for everyone; a reader who drags a column
+  changes it for that session only.
