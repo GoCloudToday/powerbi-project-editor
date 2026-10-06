@@ -3351,3 +3351,25 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
   it. Expect it after any reload that renames members above the selected level.
 - Column widths cannot be locked. Fixed widths with auto-size off hold for everyone; a reader who drags a column
   changes it for that session only.
+
+#### 2026-10-06 round 2 (testing access measures as other users; what a Desktop save does to table widths)
+
+- **`DEFINE MEASURE` with the name of a model measure overrides it only for references written in the query.**
+  Model measures that reference it keep the model's definition. Evidence: with
+  `DEFINE MEASURE 'T'[Signed in user] = "<an admin's UPN>"`, `ROW("u", [Signed in user], "a", [Is admin])` returned
+  the literal for `u` but `0` for `a` (the model's `[Is admin]` reads `[Signed in user]`). To test access logic as
+  someone else on the local engine (where `EffectiveUserName` with a UPN is refused, see §2026-09-26), DEFINE the
+  user measure AND every access measure that depends on it, copying their expressions from the model (a TOM dump
+  of the definition gives them on one line each); then the query-defined measures reference each other. Six
+  simulated users, four lists, all counts equal to the same counts computed in SQL.
+- **Read access on an audit list without row-level security**: a measure used as a visual-level filter (`= 1`),
+  `VAR RowKeys = VALUES(Log[Key]) VAR MyKeys = <the user's keys from the access table> RETURN IF([Is admin] = 1 ||
+  (NOT ISEMPTY(RowKeys) && ISEMPTY(EXCEPT(RowKeys, MyKeys))), 1, 0)`. It holds in every role, workspace members
+  included, which RLS does not, and a row that groups several keys shows only when all of them are the reader's.
+  The author sees the lists empty in Desktop when the local sign-in is not the one in the access table.
+- **A Desktop save turns `columnHeaders.autoSizeColumnWidth` to `true` on every tableEx it rendered in that
+  session**, and bumps those visual.json files to the visualContainer 2.13.0 schema. Seen in two saves: five tables
+  on the two pages visited, then the three tables of the one page visited; nothing else in the report changed (a
+  JSON-normalized diff against the generator output, numbers compared as numbers). Harmless when every column has
+  its own `columnWidth`: a screenshot with the flag patched to `true` put every column header at the same pixel as
+  with `false`. A generator that rewrites the report will flip it back; diff a user's save before regenerating.
