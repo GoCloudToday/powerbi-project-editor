@@ -3373,3 +3373,26 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
   JSON-normalized diff against the generator output, numbers compared as numbers). Harmless when every column has
   its own `columnWidth`: a screenshot with the flag patched to `true` put every column header at the same pixel as
   with `false`. A generator that rewrites the report will flip it back; diff a user's save before regenerating.
+
+### 2026-10-08 (a budget shown twice in a hierarchy: a fact bridged to the product dimension on a class code)
+
+- **A fact that joins the product dimension on a NON-KEY attribute is reached from every parent path that lists
+  that attribute value.** The budget fact carried a class code one level below the business unit (BU); a one-column
+  bridge of distinct codes sat between it and the product dimension (bidirectional on the dimension side). One code
+  had 48 legacy master-data rows under one BU and 11 ERP rows (all the sales) under another, so a matrix grouped by
+  dimension BU > class 1 > class 2 showed that budget line under BOTH BUs: the BU subtotal of the wrong BU was
+  inflated by the whole line, while the grand total stayed right (the SUM touches each budget row once). Sweep for
+  it in one query: `FILTER(SUMMARIZECOLUMNS(dim[Class2], "n", COUNTROWS(SUMMARIZE(dim, dim[BU], dim[Class1]))),
+  [n] > 1)`; it found 6 named codes (plus blank), among them a second live duplicate (a class-1 name with and
+  without a suffix, legacy vs ERP spelling) nobody had reported. The budget fact had its own BU column the model never used.
+- **"Show the budget only where actuals exist" hides the duplicate but is not a neutral fix.** The guard
+  `CALCULATE(SUM(budget), KEEPFILTERS(FILTER(VALUES(dim[Class2]), <CY + PY sales over the class> is not blank)))`
+  runs per cell, so: (a) monthly values no longer add up to the year (sum of months 0.2-3.6 % below the year value
+  across five subsidiaries; the unguarded measure was exact) and a month slicer drops every budget
+  line that had no sales in that month; (b) a budget line with no actuals at all disappears, which is the -100 % gap
+  a budget report exists to show (2 lines across 5 subsidiaries here). Measure before/after on the report's own
+  filters, split into "zero became blank" (245 cells, cosmetic) and real value changes (13 cells), and list each
+  value change with its reason before shipping the guard.
+- **PowerShell: `DBNull` is truthy.** `Where-Object { $_.ErrorMessage }` over an OleDb DMV rowset counted 215 of
+  215 measures as having errors; every `State` was 1 and no message had text. Test
+  `$_.ErrorMessage -isnot [DBNull] -and "$($_.ErrorMessage)".Trim()`, and count `State <> 1` separately.
