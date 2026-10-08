@@ -3424,3 +3424,20 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
   0 under this rule where the guard blanked them: a presentation choice, not a correctness one.
 - **Compare numbers, not formatted strings.** `'{0:N0}' -f` printed a total ending in exactly .5 rounded DOWN and one
   ending in .500000002 rounded up, so two totals that differed by 2e-9 printed one unit apart and looked like a gap.
+
+#### 2026-10-08 round 3 (the home-path rule deployed to two measures; the acceptance gate)
+
+- **Gate a "nothing counted twice, nothing lost" budget rule with checks that never read the rule's text**, run on
+  report-shaped `ROLLUPADDISSUBTOTAL` grids under the report's own filters: (1) year total per subsidiary and for
+  the group equals the plain fact sum; (2) months add up to the year per subsidiary, group, and subsidiary x BU;
+  (3) hierarchy additivity: every parent row equals the sum of its children at every level (catches a line counted
+  under two parents without knowing which line); (4) no visible zero-budget cell without actuals (the presentation
+  rule). Calibrate all four on known-bad rules in the same run: the prototype passed everything; the actuals guard
+  failed (1) on 2 of 6 totals and (2) on 16 of 21; the plain sum failed (3) on 4 of 120 and (4) on 297 of 345. Every
+  check failed on at least one bad rule, so none is vacuous. After the edit, deployed equals prototype on 870 of 870
+  cells in both currency measures, and the report's visual query shapes ran in 0.10-0.31 s (guard: 0.16-0.68 s).
+- **Rule 7 in practice: the first gate run printed every spot row as UNVERIFIED (0 rows found) and a count of
+  "4 failures of 1 checked".** Cause: a column-name variable `$S` was overwritten by a measure-name variable `$s`
+  (PowerShell names are case-insensitive, the same trap as `$view`/`$View`). Because spot lookups report a miss as
+  UNVERIFIED instead of passing vacuously, and every line prints failures OF items checked, the cause was obvious in
+  one read.
