@@ -3396,3 +3396,31 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
 - **PowerShell: `DBNull` is truthy.** `Where-Object { $_.ErrorMessage }` over an OleDb DMV rowset counted 215 of
   215 measures as having errors; every `State` was 1 and no message had text. Test
   `$_.ErrorMessage -isnot [DBNull] -and "$($_.ErrorMessage)".Trim()`, and count `State <> 1` separately.
+
+#### 2026-10-08 round 2 (the side-effect-free shape, built and measured)
+
+- **Put each budget line on ONE home path computed from master data, and never condition it on actuals.** Home
+  path of a class code = its (BU, class 1, class 2) in the CURRENT master-data source (the ERP rows here; the
+  legacy rows carried the stale parents); codes with no current rows keep their legacy paths; and the fact's own BU
+  code must equal the path's BU, so the filter goes onto the fact as (BU, class) PAIRS. Check the rule against the
+  fact before trusting it: 73 of 73 valued budget lines had exactly one current path with the same BU as the fact;
+  5 lines had no current rows (4 of them zero). Shape (measure-only, so no refresh):
+  ```
+  IF ( ISFILTERED ( dim[Class3] ), BLANK (),
+      VAR _visible = SUMMARIZE ( dim, dim[OrgUnit], dim[Class1], dim[Class2] )
+      VAR _homeCur = CALCULATETABLE ( SUMMARIZE ( dim, dim[OrgUnit], dim[Class1], dim[Class2] ),
+                         REMOVEFILTERS ( dim ), REMOVEFILTERS ( bridge ), dim[Source] = "current" )
+      VAR _curCodes = DISTINCT ( SELECTCOLUMNS ( _homeCur, "c", dim[Class2] ) )
+      VAR _homeOld = FILTER ( CALCULATETABLE ( SUMMARIZE ( dim, dim[OrgUnit], dim[Class1], dim[Class2] ),
+                         REMOVEFILTERS ( dim ), REMOVEFILTERS ( bridge ) ), NOT ( dim[Class2] IN _curCodes ) )
+      VAR _keys = SELECTCOLUMNS ( INTERSECT ( _visible, UNION ( _homeCur, _homeOld ) ),
+                         "bu", <BU code of dim[OrgUnit]>, "c", dim[Class2] )
+      RETURN CALCULATE ( SUM ( fact[Amount] ), TREATAS ( _keys, fact[BU], fact[Class2] ) ) )
+  ```
+  Measured against the unguarded sum and the actuals guard on the report's own filters, in both currencies:
+  subsidiary totals equal the raw fact sum in 5 of 5 subsidiaries (differences at most 3e-8), months sum exactly to
+  the year (guard: up to 3.6 % short), both duplicates gone, the two zero-actual lines back; the table-visual query
+  shape ran in 0.23-0.26 s against 0.35-0.65 s for the guard. Rows with zero budget and no actuals (223 here) show
+  0 under this rule where the guard blanked them: a presentation choice, not a correctness one.
+- **Compare numbers, not formatted strings.** `'{0:N0}' -f` printed a total ending in exactly .5 rounded DOWN and one
+  ending in .500000002 rounded up, so two totals that differed by 2e-9 printed one unit apart and looked like a gap.
