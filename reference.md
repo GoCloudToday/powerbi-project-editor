@@ -3478,3 +3478,19 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
 - **PowerShell 7 and Windows PowerShell 5.1 keep separate user module folders** (`Documents\PowerShell\Modules`
   and `Documents\WindowsPowerShell\Modules`): a module installed from 7 (here `SqlServer`, for `Invoke-ASCmd`) is
   "not loaded because no valid module file was found" in 5.1. Run such a script under the shell that has it.
+
+#### 2026-10-12 round 2 (fitting more tabs and rows into a fixed page: measure before you lay out)
+
+- **Predict label wrapping with GDI+ before building.** `Graphics.MeasureString(text, new Font('Arial', pt * 96 / 72,
+  GraphicsUnit.Pixel), 1000, StringFormat.GenericTypographic)` gave widths that matched what Desktop rendered: an
+  eighth bookmark made each navigator button 134 px; labels measured at 134 to 143 px at 9 pt (more than the ~124 px
+  left after padding and outline) wrapped in the screenshot, one at 115 px stayed on one line. It also showed that no
+  font size kept all eight labels on one line with readable padding, which settled the design before any build.
+- **A bookmarkNavigator wraps a long label onto a second line cleanly when the visual is tall enough**: 40 px at 9 pt
+  gave tidy two-line buttons next to one-line ones (vertically centred); at 30 px the same wrap looked broken (seen
+  earlier with a bold selected label). Make the strip taller rather than renaming agreed labels.
+- **A tableEx row at font 10 is about 21 px with `grid.rowPadding` 3 and about 15 px with 0**: a 186 px table with a
+  title, a header and a totals row showed 5.5 data rows at padding 3 and all 7 at padding 0. For a table with a fixed,
+  small set of rows (one per category), drop the padding on that table only.
+- **A text box that overflows by a line shows a scroll bar, not clipped text**: 3 lines of 9 px text need 48 px
+  (44 px showed the bar). Check footers on the screenshot after every text change.
