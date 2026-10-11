@@ -1564,7 +1564,8 @@ This is the whole bug class, and it is invisible to anyone with write access:
 - `impersonatedUserName` — the documented way to reproduce an RLS identity — returns
   **HTTP 401 `RLSNotAuthorizedForModel`** unless you own or administer the dataset. On a
   model configured by someone else, simulate the role with `TREATAS` instead; it matched
-  the real report output exactly.
+  the real report output exactly. (Refined 2026-10-12: the same code comes back, for the
+  dataset owner too, when the impersonated person is in NO role; see that entry.)
 - Resource Governance rejects wide `SUMMARIZECOLUMNS` over a high-cardinality document
   identifier: `consumed memory 10488 MB, memory limit 10240 MB`. Narrow to one period and
   `SUMMARIZE` over an already-filtered `CALCULATETABLE` instead of filtering afterwards.
@@ -3441,3 +3442,39 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
   (PowerShell names are case-insensitive, the same trap as `$view`/`$View`). Because spot lookups report a miss as
   UNVERIFIED instead of passing vacuously, and every line prints failures OF items checked, the cause was obvious in
   one read.
+
+### 2026-10-12 (a "global" role that could not write; reading role membership off a published model)
+
+- **A role without filters plus write rights kept elsewhere is half a global role.** A translytical planning tool
+  had a role with no table permissions for "the planning team"; saving was authorized by a user list in SQL that
+  the save functions read. The two people meant to plan everything were put in the role (or were workspace
+  members) but had no list entry: they saw every row, every input showed "View only", and every save was refused.
+  Make "global" ONE concept stored with the write rights (a GLOBAL entry in the list, which also lifts the
+  dynamic-RLS filters), name the read role after it, and give each member both; a gate that compares the two sides
+  per person catches the half-configured state.
+- **`executeQueries` with `impersonatedUserName`, called by the dataset owner, tells role membership by its
+  effect** (role members can't be read through the API: `getDefinition` leaves `member` entries out of
+  `roles/*.tmdl`, and `INFO.ROLEMEMBERSHIPS()` / `INFO.ROLES()` fail in executeQueries with AS code 3239575574).
+  Measured on one model, same caller, same query, one person at a time:
+  - person in a role: the query runs under that role; `USERPRINCIPALNAME()` returns the person;
+  - person in NO role: HTTP 401 `RLSNotAuthorizedForModel`, although the caller owns the dataset;
+  - person who is a workspace Admin, Member or Contributor: NOT impersonated; the answer is the caller's own
+    (`USERPRINCIPALNAME()` returns the caller), because roles don't limit those users.
+  So per person: refused = no role (sees no data in the app); answered as the caller = workspace member; counts of
+  the secured dimensions equal to everything = an unfiltered role (or a lifting entry); fewer = the filtered role.
+  The first run of such a gate found the unfiltered role holding a broad app-audience GROUP: every planner in that
+  group saw everything, the planners outside it were in no role at all, and nobody had noticed.
+- **App viewers need Execute on the user data functions item** (Share, "Execute Functions and View Functions
+  Logs"); without it a data function button answers "Something went wrong". Workspace Admins, Members and
+  Contributors have it through their role.
+- **Settle which identity a managed UDF connection uses with a call log**: after each procedure call the function
+  writes one row (caller from the function context, `SUSER_SNAME()` from the session, procedure, ok flag, the
+  message the caller saw). The first call by someone other than the item owner answers it; until then a check
+  where the owner is also the caller proves nothing. The docs state the owner's identity for generic connections and
+  describe managed connections as a similar experience. The same log answers "a user saw an error" later.
+- **Dynamic RLS over a dual access table lags the list; the write check does not.** The security filters and
+  access measures read the import copy of the access table, so a new list entry reaches the app only after a model
+  refresh, while the save procedure honours it at the next click. Script the refresh after access changes.
+- **PowerShell 7 and Windows PowerShell 5.1 keep separate user module folders** (`Documents\PowerShell\Modules`
+  and `Documents\WindowsPowerShell\Modules`): a module installed from 7 (here `SqlServer`, for `Invoke-ASCmd`) is
+  "not loaded because no valid module file was found" in 5.1. Run such a script under the shell that has it.
