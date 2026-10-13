@@ -3472,6 +3472,11 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
   message the caller saw). The first call by someone other than the item owner answers it; until then a check
   where the owner is also the caller proves nothing. The docs state the owner's identity for generic connections and
   describe managed connections as a similar experience. The same log answers "a user saw an error" later.
+  **Settled (2026-10-13): a managed connection from a user data function to a Fabric SQL database runs as the
+  item's owner.** Eleven app calls by two other people (a workspace Member, and an app viewer holding only Execute on
+  the item) all logged `SUSER_SNAME()` = the owner's sign-in, with each caller's own name from the function context.
+  So app users need no database rights, the procedures can trust the name the function passes, and in production
+  the functions item must belong to an account that stays.
 - **Dynamic RLS over a dual access table lags the list; the write check does not.** The security filters and
   access measures read the import copy of the access table, so a new list entry reaches the app only after a model
   refresh, while the save procedure honours it at the next click. Script the refresh after access changes.
