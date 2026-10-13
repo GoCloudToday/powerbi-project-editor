@@ -3494,3 +3494,29 @@ invisible to the binding, TMDL and button gates (all at 0 problems before and af
   small set of rows (one per category), drop the padding on that table only.
 - **A text box that overflows by a line shows a scroll bar, not clipped text**: 3 lines of 9 px text need 48 px
   (44 px showed the bar). Check footers on the screenshot after every text change.
+
+#### 2026-10-13 (reproducing a user's figure from a published report, and replicating a page measure for another window)
+
+A user put a screenshot of a published CRM report page next to a figure of our own report and called it a
+discrepancy. The page's definition came from Fabric `getDefinition` on the report (PBIR parts), its measures from
+`getDefinition?format=TMDL` on the model, the numbers from `executeQueries`.
+
+- **A slicer's own visual-level filter limits the slicer's item list, not the page.** Copying a slicer visual's
+  `filterConfig` filter (company source "not null and not X") into the reproduction cut one figure roughly in half
+  against the screenshot; without it the figure matched to the unit. Reproduce a page with its PAGE filters (and the
+  visual filters of the visual that shows the number), never with filters found on slicer visuals.
+- **When the saved definition reproduces one screenshot exactly and not another, look for a personal filter.**
+  Page filters stored without a condition can be set by any reader in the filter pane, and the service keeps that
+  state per user. Split the measure by each such filter column (`SUMMARIZECOLUMNS(filterColumn, "V", [Measure])`
+  under the page filters): one split equalled the user's figure to the unit, which named the filter they had on.
+  The other screenshot, three minutes later, matched the unfiltered total: the state differed between the two.
+- **To replicate a page measure for another window, keep its inner variables inside the filter context.** The
+  measure built a list of won records with `CALCULATETABLE(..., REMOVEFILTERS('Calendar'))`, so the page's filters on
+  other tables shaped that list. A copy with the list as a query-level `VAR` before `CALCULATETABLE` saw no filters
+  and came out about 8 % high for one country and three times too high for another; declared inside the expression
+  that `CALCULATETABLE` evaluates (`ROW("V", VAR x = ... RETURN ...)` or a `SUMMARIZECOLUMNS` expression), the copy
+  equalled the page's own measure in every country (45 of 45) for the measure's own year.
+- **Gate a replicated rule against the source's own measure where their periods overlap.** The source measure only
+  knew its calendar year; the copy runs any window. The gate runs the copy for that calendar year and compares it
+  with the source measure per country (an oracle that shares no code with the copy), and its calibration runs the
+  previous, naive rule through the same comparison and expects it to fail (it failed in all 45 countries).
