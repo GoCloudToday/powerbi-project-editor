@@ -3566,3 +3566,31 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   shows a part, until the source splits it), say so in the label.
 - The footer rule of 2026-10-12 round 2 caught a lengthened footer again: three lines in a 44 px text box showed
   the scroll bar; 48 px fixed it.
+
+#### 2026-10-15 round 2 (changing a live DirectQuery view under a published model; data-driven label widths; an announced upstream split)
+
+- **A DirectQuery view can change its grain under the published model without breaking it, if every consumer
+  aggregates additively and no column goes away.** An input table went from one row per country and vertical to one
+  per country, vertical and segment; the SQL was deployed hours before the new model could be published. The old
+  model's measures over that table were SUMs of amounts, MAX of 0/1 flags and SELECTEDVALUE of the grouping column,
+  and the view kept every old column (new ones only added). Checks: the per-key sums of the view before and after
+  the deploy (a JSON snapshot; 0 of 518 keys moved), and the PUBLISHED model queried afterwards with
+  `executeQueries` as a viewer, which returned the same figures as a user's screenshot taken before the change. An
+  AVERAGE, a DISTINCTCOUNT over the old key, a MIN or MAX of an amount, or a renamed column would have changed or
+  broken the live app until the next publish; check every measure over the table for that before deploying first.
+- **A label that embeds a data value must fit the longest value, not the demo's.** "Revenue change for all accounts
+  in <country>: 100% (default)" fitted for the screenshots' demo countries and ended in an ellipsis for 10 of 74
+  countries; GDI+ over every country name (`Graphics.MeasureString`, the label's font and weight) gave up to 434 px
+  for a 414 px box. Screenshots only ever show the demo values: measure every value whenever a text concatenates
+  data, then size the box (here 500 px, the neighbouring label moved).
+- **Get the load ready for an announced upstream split by widening its key now.** A reference table keyed on
+  (category, region) was loaded from a source table about to add a segment split to those rows; the first load after
+  that change would have stopped the whole import on a duplicate key. Add the split to the key with a default for
+  the unsplit rows (here ALL, AD or PG), let the view pick the finer rows as soon as any exist and expose a flag the
+  report label reads ("all segments" until then), throw on an unknown split value instead of guessing, and gate the
+  switch with a planted row inside a transaction that is rolled back. The announced change then needs a reload, no
+  build or publish.
+- **When a target is shared out by revenue, test the share against the revenue read directly, not through the view
+  under test**: set a region target, expect each country's share from the raw revenue table, then set one country's
+  own target and expect the rest to share what is left (here 1,000 on a region: 309.06 to the largest country by its
+  revenue share; then 300 own, and the next country 220.77 of the remaining 700), and clear everything again.
