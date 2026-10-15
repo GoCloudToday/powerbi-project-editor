@@ -3525,3 +3525,44 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   knew its calendar year; the copy runs any window. The gate runs the copy for that calendar year and compares it
   with the source measure per country (an oracle that shares no code with the copy), and its calibration runs the
   previous, naive rule through the same comparison and expects it to fail (it failed in all 45 countries).
+
+#### 2026-10-15 (re-keying a dimension onto a source system's code, a second line under card tiles, Databricks without a connector)
+
+- **A Databricks SQL warehouse takes an Entra token directly: no connector, no personal access token.** The SQL
+  Statement Execution API accepted a token for the Azure Databricks resource (the public first-party application id
+  `2ff814a6-3304-4ab8-85cb-cd0e6f879c1d`; `Get-AzAccessToken -ResourceUrl <that id>` from an ordinary Az sign-in) for
+  a user who could use the warehouse. `POST https://<workspace host>/api/2.0/sql/statements` with `warehouse_id`,
+  `statement`, `wait_timeout: '50s'`, `on_wait_timeout: 'CONTINUE'`, `format: 'JSON_ARRAY'`, `disposition: 'INLINE'`;
+  while `status.state` is PENDING or RUNNING, `GET .../statements/{statement_id}`; column names come from
+  `manifest.schema.columns`, rows from `result.data_array`, and the next chunk from `GET <host><next_chunk_internal_link>`
+  until the link is absent. Count the rows read against `manifest.total_row_count` and fail on a difference. Reach for
+  it when a dataflow joins the source table but drops the column you need (here it joined a CRM account table for two
+  attributes and left out the code that groups accounts).
+- **Re-keying dimension rows onto a source code under a unique (name, category) constraint.** Old keys hashed
+  "name|category"; the new keys hash the source system's code, so several old names merge into one code and one
+  name can move. The usual import (MERGE the load file, then retire the keys nothing points at) failed at the first
+  new row whose name and category equalled a surviving old row, and rolled back. The order that works, in one
+  transaction with a dry-run switch that rolls back: (1) mark the colliding old rows (a dated suffix on the name);
+  (2) insert the new rows; (3) move every reference from old to new keys: the input tables, found by column name
+  through `INFORMATION_SCHEMA.COLUMNS` so a new input table is not missed, and the per-user access rows, deleting
+  an old access row where the person already holds the new key; (4) report references that point at no row;
+  (5) run the regular import, which now retires the old rows because nothing points at them. Where one old key maps
+  to several new ones, its entries go to the new key with the most revenue; write that map to a file with the load.
+- **PowerShell: a line that starts with a comma nests its first entry.** Inside a multi-line `@( ... )` the newline
+  ends a statement, so a leading comma is the UNARY comma, which binds tighter than the binary one: the line
+  `, @('e','f'), @('g','h')` emits `(,@('e','f')), @('g','h')`, and the first entry arrives as a one-element array
+  holding the pair (measured: that item `n=1 first=e+f`, its neighbours `n=2`). A line with ONE entry
+  (`, @('i','j')`) unrolls back and looks fine, so the style survives until a second entry joins the line. The
+  symptom was a generator's shape check: `Malformed relationship entry: System.Object[]`. Put commas at line ends.
+- **A second line under the tiles of a new card visual: a text-bound button below each tile.** The card shows one
+  value per tile and no line break (see the multi-line rule), so for "this year's figure over the year before" each
+  tile got a line under it: an `actionButton` with `icon.shapeType` blank, fill, outline, title, background and
+  border off, and `text.text` bound to a measure (`{expr: {Measure: {Expression: {SourceRef: {Entity}}, Property}}}`),
+  font 10, grey, centred, `verticalAlignment` middle. For an n-tile strip at (x, y, w): the strip 66 px tall, line i at
+  (x + i * w / n, y + 66, w / n, 24). The measure returns `"Label " & amount`, the amount formatted like the card's
+  auto units (`#,0.0` plus "bn", "M" or "K", plain below a thousand), and `""` when the value is blank or 0, so a
+  tile without data has no orphan line. The lines go into the same bookmark group as their strip. Verified on
+  Desktop screenshots of four strips. When the earlier figure covers more than the card (a total where the card
+  shows a part, until the source splits it), say so in the label.
+- The footer rule of 2026-10-12 round 2 caught a lengthened footer again: three lines in a 44 px text box showed
+  the scroll bar; 48 px fixed it.
