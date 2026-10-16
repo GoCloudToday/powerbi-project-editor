@@ -3594,3 +3594,37 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   under test**: set a region target, expect each country's share from the raw revenue table, then set one country's
   own target and expect the rest to share what is left (here 1,000 on a region: 309.06 to the largest country by its
   revenue share; then 300 own, and the next country 220.77 of the remaining 700), and clear everything again.
+
+#### 2026-10-15 round 3 (reading a PBIP's cached data without Desktop; evaluating M without Desktop; an expand that can never match; status-based splits that miss partial invoices)
+
+- **A PBIP's `.pbi\cache.abf` reads offline with pbixray.** The file begins "This backup was created using XPress9
+  compression", the same container as a PBIX `DataModel`. pbixray opens only PBIX-shaped zips, so write cache.abf as
+  the single entry `DataModel` of a `ZIP_STORED` zip (in %TEMP%, never inside the synced project) and open that:
+  metadata of 37 tables in 4.6 s, a 224,151-row table in 1.8 s, a 577,539-row x 78-column fact in 15.7 s. Use it when
+  Desktop cannot be launched (here about 1 GB of RAM free) and no sign-in is at hand. The rows are as of the cache's
+  last LOCAL refresh, not the service: print the max of the date columns with every figure.
+- **Evaluating an M snippet without Desktop: Excel's mashup provider over COM.** `New-Object -ComObject
+  Excel.Application` (its own instance; `Quit()` leaves a user's open Excel alone), `$wb.Queries.Add("Q", $m)`, then
+  `$ws.ListObjects.Add(0, "OLEDB;Provider=Microsoft.Mashup.OleDb.1;Data Source=$Workbook$;Location=Q;Extended
+  Properties=""""", $true, 1, $ws.Range("A1"))` with `QueryTable.CommandType = 2`, `CommandText = "SELECT * FROM [Q]"`
+  and `QueryTable.Refresh($false)`; read the cells back. A few seconds; settles M-semantics questions with the real
+  engine instead of forum threads (which disagreed on the case below).
+- **Expanding a column the nested tables do not have yields null, silently.** A merge meant to override a status:
+  `Table.ExpandTableColumn(merged, "R", {"ItemId"}, {"Marker"})`, then `if [Marker] <> null then "Invoiced" else
+  [Status]`, while the right query selected only its three join keys. Verified with the engine: the expanded column
+  is null on every row, also where the nested table has a matching row, and no error is raised. The override had been
+  dead in every saved definition for four months while every refresh succeeded. Static check: each column named in
+  an expand list must be among the right query's output columns.
+- **An ERP line status that stays "open" until nothing is left to deliver hides partial invoices.** A report that
+  values documents with the ORDER lines and splits them by line status (invoiced lines to a pseudo-document, the rest
+  open) shows a line that is 90 % invoiced as 100 % open and misses the invoiced part in sales; dating each document
+  with its LATEST linked invoice also books multi-month invoicing in the last month. Size it from the invoice HEADERS
+  first: open orders with at least one sales invoice, invoice net minus the fully invoiced lines (net = total - tax -
+  charges + end discount reproduced the order-line amounts of fully invoiced single-order invoices within 0.013 % over
+  2,614 orders). The fix is invoice LINES keyed by the order line's lot ID (D365: `InventTransId`, exported on order
+  lines as INVENTORYLOTID; the standard "Sales invoice lines V2/V3" entities do NOT carry it, the BI entity
+  `CustInvoiceTransBiEntity` and the table-level links do), one document per (order, invoice) plus an open remainder.
+  The header field D365 `SalesOrderProcessingStatus` (PartiallyInvoiced) is a computed column of sales status x
+  document status, and document status keeps the most advanced document ever posted, so it is a reliable flag that
+  an invoice exists, but it carries no quantity. Never express such a flag as a new value of a status column that
+  report pages filter with NOT IN: the new value would silently count as sales.
