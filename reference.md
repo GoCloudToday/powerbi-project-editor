@@ -3628,3 +3628,48 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   document status, and document status keeps the most advanced document ever posted, so it is a reliable flag that
   an invoice exists, but it carries no quantity. Never express such a flag as a new value of a status column that
   report pages filter with NOT IN: the new value would silently count as sales.
+
+#### 2026-10-20 (rebuilding a stale PBIP from the service with its data; an amount repeated per account attribute; emulating a fix with query-scoped measures)
+
+- **When the local PBIP is older than the published model, rebuild it from the service, data included.** The local
+  project was five weeks behind (another author had republished: a changed relationship, three tables, one shared
+  expression, fifteen visuals). Recipe that opened first time: Fabric `getDefinition` for the semantic model (TMDL)
+  and for the report (PBIR as stored; LF line endings, `byConnection` binding, zeroed `logicalId`s), plus the Power BI
+  REST `GET groups/{ws}/reports/{id}/Export` PBIX (161 MB in 103 s) whose `DataModel` part starts with the same
+  "XPress9" header as `cache.abf` and goes in as `.pbi\cache.abf`. Replace `definition.pbir` with a `byPath` binding
+  and carry both `.platform` files and both `.pbi\localSettings.json` from the previous local project (they keep the
+  published targets). Desktop restored all 88 partitions as Ready with the service's last refresh, applied the edited
+  TMDL and recalculated the edited calculated table on open. The PBIX's own report part is minified JSON but
+  semantically identical to `getDefinition`'s (412 of 412 files). After one save from Desktop, 508 of 518 files were
+  text-identical to the published definitions (CR ignored); the rest were the two intended edits, the binding, the
+  `logicalId`s, a `DevMode` annotation and the local-only files. Compare against the published definition BEFORE
+  editing anything: here the objects to be edited were identical in both, so editing the stale folder would have
+  looked fine, and publishing it would have silently reverted the other author's changes.
+- **"One or more calculated objects need to be manually refreshed" and an error icon on the edited calculated table
+  in the Data pane do not mean the expression failed.** The engine had already recalculated it on open (partition
+  `State 1`, `RefreshedTime` at open, the new columns `State 1`, the expected row count, no column or measure
+  `ErrorMessage`). The banner's **Refresh now** (UI Automation `InvokePattern`, no focus change) cleared both in about
+  16 s and started no mashup container; a save then made the project an ordinary Desktop-saved one. Read the TMSCHEMA
+  states before treating the icon as a broken formula.
+- **Readiness polls for calculated-table columns must read `InferredName`.** `TMSCHEMA_COLUMNS.ExplicitName` is empty
+  for `isNameInferred` columns (type 4); a poll waiting for the new column by `ExplicitName` timed out after 400 s on a
+  model that had been ready since about 100 s.
+- **An amount at entity grain shown with account-grain attributes repeats once per attribute combination.** A table
+  visual grouped by three account attributes (source system, segment, industry) while its measures were defined per
+  customer and country, reached through a bidirectional relationship: every account combination of one customer and
+  country showed the full amount (one region: 1,797 rows for 1,563 cases; the rows summed about 30 % above the
+  visual's own total, which was right). Fix: put the attributes on the entity table itself, each as the list of its
+  distinct values ("A, B", segments in their sort order), and rebind the visual's grouping to those columns. Computed
+  INSIDE the calculated table's expression from a keyed `SUMMARIZECOLUMNS` of the account table, filtered to the
+  result keys before the per-row `CONCATENATEX` (adds about 2 s to a 10 s table), rather than as `CALCULATE` columns
+  through the relationship, so the table gains no new dependency on its own relationship. Cross-check: the key-based
+  lists and `CALCULATE`-through-the-relationship lists matched on all 2,425 rows; afterwards rows = cases and the rows
+  add up exactly to the total.
+- **Emulating a measure fix with query-scoped `DEFINE MEASURE` overrides: other MODEL measures keep using the model
+  definition.** Overriding the amount measure changed that column, while a model ratio measure built on it kept its old
+  value until it was redefined in the same `DEFINE` too. Redefine every measure on the path to each value you read.
+  Also: `executeQueries` returns only the FIRST `EVALUATE`'s table when a query holds several (1 table for 3); send
+  them as separate requests.
+- **Windows PowerShell 5.1 and `TmdlSerializer`: MAX_PATH.** "Could not find a part of the path ...\definition\tables"
+  for a folder that exists, on a ~250-character scratchpad path; the same folder copied to a short `%TEMP%` path
+  parsed. Run gate calibrations on short paths, or the "failing" case fails for the path, not the TMDL.
