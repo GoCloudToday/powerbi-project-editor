@@ -3673,3 +3673,42 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
 - **Windows PowerShell 5.1 and `TmdlSerializer`: MAX_PATH.** "Could not find a part of the path ...\definition\tables"
   for a folder that exists, on a ~250-character scratchpad path; the same folder copied to a short `%TEMP%` path
   parsed. Run gate calibrations on short paths, or the "failing" case fails for the path, not the TMDL.
+
+#### 2026-10-20 round 2 (import partitions pulled from a published semantic model; an alias that ate the auth header; item-type creation policy)
+
+- **Pulling an import fact from a published (certified) semantic model works under a real incremental policy, and the
+  natural keys can be resolved INSIDE the source query.** Partition M: `AnalysisServices.Database("powerbi://api.powerbi.com/v1.0/myorg/<workspace>",
+  "<model>", [Query = Dax, Implementation = "2.0"])` with `EVALUATE SELECTCOLUMNS(CALCULATETABLE(Fact, Fact[DateKey] >= <s>,
+  Fact[DateKey] < <e>), "Alias", RELATED(Dim[Code]), ...)`, the window keys spliced from `RangeStart`/`RangeEnd` passed as
+  function ARGUMENTS (the policy text check, §2026-09-02). Columns arrive named `[Alias]`; strip with
+  `Table.TransformColumnNames(t, each Text.TrimEnd(Text.TrimStart(_, "["), "]"))` and declare `sourceColumn: Alias`.
+  RELATED along the upstream model's own relationships returns codes with no M merge (Rule 10 never comes into play).
+  Measured on a shared capacity: 20.5M line rows x 21 columns (one 13.1M-row month partition + 20 day partitions,
+  maxParallelism 6) in 23.6 min; 5.75M header rows x 32 columns in 9.6 min; the nightly policy run (7 day partitions per
+  fact, 2.2M + 0.6M rows, plus three small tables) in 3.3 min, twice. Day-by-day row counts equal the upstream model on
+  all 50 days, zero blank codes, every code resolves to its dimension. About the same rows per minute as the legacy
+  warehouse-SQL refresh of the same facts: the saving comes from the window, not the source.
+- **The upstream model's RLS applies to the refresh identity.** The import sees exactly what the credential owner sees
+  (a site-mapping table filtered by `USERPRINCIPALNAME()` hid sites the user was not mapped to). Verify the identity's
+  coverage before trusting a full copy.
+- **A REST-created model silently REUSES the owner's existing cloud datasource entry for the same server + database.**
+  The entry found here carried `credentialType: SingleSignOn`; the first refresh failed in 0 s with "the data source
+  credentials are not configured", and `GET gateways/{gw}/datasources/{ds}/status` answered
+  `DM_GWPipeline_Gateway_UnsupportedAdomdAuthenticationTypeError`. Fix: the owner signs in with OAuth2 in the model's
+  settings (afterwards `credentialType: OAuth2`); never PATCH a raw token into that shared entry.
+- **`H` is a built-in alias of `Get-History`.** A header helper named `H` returned history instead of a hashtable, so every
+  `-Headers (H)` request went out WITHOUT Authorization: the enhanced refresh POST answered **403 with an empty body**, five
+  retries in a row, while a request built from a `$h` VARIABLE succeeded - it looked exactly like "enhanced refresh is
+  forbidden for this model". Same family as `R`/`Diff` (§2026-09-04 round 2): never give a helper a one- or two-letter
+  name; `Get-Alias <name>` before naming one. An empty-bodied 403 from a Microsoft API = check the request's own headers first.
+- **A month-grain rolling window counts COMPLETE periods before the current one.** `rollingWindowPeriods: 1`,
+  `rollingWindowGranularity: month`, `incrementalPeriods: 7` days, refreshed on the 20th, stored the previous full month as
+  one month partition PLUS the current month's 20 days. Size the first load for N full periods + the current one.
+- **An item-type creation policy can block Lakehouse and Warehouse while semantic models still create.** Both returned
+  403 `ItemCreationRestrictedByPolicy` ("Item creation of type 'Lakehouse' is restricted by policy") in a workspace where
+  the same create had worked a month earlier; `POST /items` with type SemanticModel and folder creation still worked. A
+  probe with an invalid display name is useless - `InvalidInput` is returned before the policy check, for blocked and
+  allowed types alike - so only a real create reveals the policy (create + delete, with the owner's consent).
+- **`INFO.PARTITIONS()` over REST `executeQueries` fails (AS 3239575574) even for a workspace Member on a model they
+  created**; policy partition names and per-partition refresh times need XMLA. The enhanced refresh record's `objects`
+  carry only what was requested (table level here), so per-table timing = one table per request.
