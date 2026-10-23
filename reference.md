@@ -3901,3 +3901,22 @@ for every defect listed, so only the engine and screenshots found them.
   `HASONEVALUE(key)` failed for those rows. The view now numbers the shared names in front ("(2) Name", unique per
   key) and a sort column (`ROW_NUMBER()` over the plain name) keeps the numbered rows with their namesakes; a DAX probe
   walks the band's states (nothing, one key, key plus a pick, a numbered namesake) to prove it.
+
+#### 2026-10-23 round 5 (a shared model republished from an older copy: three-way reconstruction, re-applying our deltas on top)
+
+- **When two people publish one model from separate copies, the later publish silently reverts the other's work.**
+  Classify the LIVE definitions three ways: against OURS (what we last published) and against BASE (the version before
+  our change). Files where live equals base but not ours are our lost changes; files where live differs from base are
+  theirs. Here the live calculated table equalled our FIRST published version, not the second, which dates their copy to
+  between our two publishes. Rebuild from the live definitions plus the Export PBIX data, then re-apply only our deltas
+  as anchored edits: one TMDL line asserted to match once, one visual file copied after asserting its content markers,
+  one visual folder removed. 508 of 518 files stayed identical to live, so their changes ship together with ours. Both
+  sides must start every change from the PUBLISHED version, or the ping-pong repeats.
+- **The report Export API can sit at 0 bytes for about 10 minutes before it streams** (748 s for 154 MB here, 103 s for a
+  similar file three days earlier). Run it in the background with a 30-minute timeout and keep working; compare its
+  report part with `getDefinition` (412 of 412 files equal) before trusting its `DataModel`.
+- **Another Desktop instance may already be open with a different project.** Helpers that take the first `PBIDesktop`
+  process or the first `msmdsrv` listener would act on the wrong model, and a kill would lose that session's unsaved
+  work. Resolve the instance by `Win32_Process.CommandLine` (it holds the .pbip path) and its engine by
+  `ParentProcessId`. With about 2 GB of commit headroom left, a second instance for a 150 MB model is not safe: verify
+  through the offline gates and the service engine, and hand the open to the operator.
