@@ -4022,3 +4022,10 @@ current page button); the same script read the old screenshot first to calibrate
   of the window was black, while a capture of the whole screen was fine. Nothing in the Application event log, 6.8 GB
   RAM free. Only a restart brought the canvas back. Before reading a black capture as a locked session or a sleeping
   display, look for this dialog (a screen capture shows it).
+- **The other half of that night: a close step that killed every Desktop.** This harness's own `close` (written before
+  the rule above) ran `Get-Process PBIDesktop | Stop-Process -Force` and the same for every `msmdsrv`, twice, while
+  another session was cycling its own Desktop on the same machine; the two sessions took each other's report views
+  down. The close now picks its Desktop by the project file in `Win32_Process.CommandLine` and its engines by
+  `ParentProcessId`, and refuses while any other Desktop runs. Calibrated by running it with another project's file
+  name: the running Desktop then counts as another one, the close refused, and one Desktop and one engine were still
+  running; the real close then stopped exactly one of each.
