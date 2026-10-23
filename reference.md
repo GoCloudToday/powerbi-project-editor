@@ -3990,3 +3990,35 @@ ran, the engine was the first `msmdsrv` listener, and "close" killed every `PBID
 - **Calibrate a comparer that says everything differs.** The first order-insensitive comparer reported all 150 files as
   changed: `ConvertTo-Json -Depth 200` throws (the maximum is 100), its try/catch fell back to the raw text, and the raw
   text differed by key order. When a comparer finds every file changed, suspect the comparer before the build.
+
+#### 2026-10-23 round 8 (vertical centring of a KPI card strip: button text margins, the new card's layout alignment, a dead WebView2)
+
+The owner sent a screenshot of a generated card strip (label and value in a new card, a coloured status bar and a
+caption under it, both `actionButton`s with measure text) and asked for the texts to be centred vertically. Every
+number below is in report pixels, measured on Desktop screenshots by a row profile per card (dark ink rows, filled
+rows, white text rows inside the fill), with the page origin and scale taken from a filled element of known rect (the
+current page button); the same script read the old screenshot first to calibrate it.
+
+- **One line of `actionButton` text sits low in a short box until its top and bottom margins are 0.** With
+  `verticalAlignment: 'middle'` alone, 10 pt bold text in an 18 px bar had 6.2 px above the caps and 2.1 px below,
+  and 10 pt text in a 17 px caption box had 6.4 px above and 0.3 px below. `text.topMargin` and `text.bottomMargin`
+  as `0L` (integer properties of the button's `text` card in the theme schema; a Desktop-saved button writes all four
+  margins) centred both: 4.3 px above and 4.3 px below in the bar, and the caption 3.1 px above its ascenders and
+  4.4 px below its baseline (a line without descenders). Left and right margins stayed at their default, so
+  left-aligned lines stay indented.
+- **The new card's `layout.alignment` is the vertical position of its content, whatever the theme schema says.** The
+  schema types it with the horizontal enum (`left` / `center` / `right`); all 53 cards of a Desktop-saved production
+  report write `'top'`. With `'center'` a label-above-value card in a 56 px box drew the label caps 12 px below the box
+  top and the value 2 px past its bottom edge. With `'top'` plus the card's own `padding` card (`paddingSelection:
+  'Custom'`, four margins `0L`, selector `default`, as Desktop writes it) the content starts at the box top: 10 pt
+  label caps at box top + 2.1, 18 pt value digits from + 27.2 to + 44.5. The box's y then places the text exactly.
+- **Space a label / value / bar / caption strip by ink, not by boxes.** Equal gaps (value to bar and bar to caption
+  5.2 px each) and equal margins (page top to the label caps 9.1 px, the caption baseline to the rule under the strip
+  9.4 px) replaced gaps of 3.1 and 6.2 px and margins of 15 and 3.3 px. The label-to-value gap (15.6 px) belongs to the
+  card and did not change.
+- **Desktop's WebView2 can die under an open session.** About three minutes after a good capture the window went
+  black with the dialog "There's a problem with WebView2 / Please report the issue to the Power BI Community"; the UI
+  Automation tree shrank to the shell (26 elements, no report content, element searches timed out) and every capture
+  of the window was black, while a capture of the whole screen was fine. Nothing in the Application event log, 6.8 GB
+  RAM free. Only a restart brought the canvas back. Before reading a black capture as a locked session or a sleeping
+  display, look for this dialog (a screen capture shows it).
