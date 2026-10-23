@@ -3845,3 +3845,59 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   inside array literals (`($i + 1)`). `-and` and `-or` share one precedence and run left to right, so mixed
   conditions need parentheses too. `SP` is the built-in alias of `Set-ItemProperty`: a helper of that name
   silently became a property write that failed on a relative path (same trap family as `H` and `Diff`).
+
+
+#### 2026-10-23 round 4 (a generated composite feedback report end to end: matrix layout, a table that showed one column, button slicer text, DirectQuery matrix speed, keyword-like names)
+
+A two-page report and its composite model were generated from scripts (dual dimensions, DirectQuery views over a
+cloud SQL database, one source-less import table, a translytical entry band) and taken through Desktop headlessly.
+Everything below was measured on that build; the gates (TOM load, binding audit, function binding audit) were green
+for every defect listed, so only the engine and screenshots found them.
+
+- **A matrix needs `objects.general[0].properties.layout = 'Tabular'` for one line per row.** With five row fields
+  expanded to the last level (`expansionStates`: every level but the last without `isCollapsed`, the last
+  `isCollapsed: true`) and `rowHeaders.stepped = false`, Desktop drew the Outline form: each level on a line of its
+  own, a staircase five lines per account. The theme schema names the property (`pivotTable.general.layout`,
+  `Compact | Outline | Tabular`); with it the same matrix showed one line per account, the parent fields in their own
+  columns. A column field (the report period) then gives grouped header cells over its value columns that move with
+  them when a reader resizes a column.
+- **On a table (`tableEx`), a projection with `active: true` hides every projection without the flag.** A helper that
+  added `active` to column projections (right for slicers, matrix rows and a chart's axis) produced a progress table
+  with ONLY its dimension column, listing every member including those with no data: the measure columns were not
+  queried at all, no error card. Give `active` only to roles that have drill levels.
+- **A button slicer (`advancedSlicerVisual`) showed empty buttons in a short box.** At 27 px (and at 42 px with a
+  visual title) the three buttons rendered without text; a 78 px box had shown it. Fixed in place with
+  `padding[0].properties = {paddingSelection: 'Custom', topMargin: 0, bottomMargin: 0, leftMargin: 2, rightMargin:
+  2}` (selector id `default`) and `value[0].properties.verticalAlignment = 'middle'`. Its options table was dual on
+  the one side of a DirectQuery relationship, so the blank member appeared as a fourth button "--" (it pushed the
+  third option out of a three-column layout): a visual-level "is not blank" filter on the key removed it.
+- **DirectQuery matrix: branching measures took 9 s, plain MAX over view columns 2.8 s, identical cells.** Eight value
+  and colour measures per cell (`SELECTEDVALUE`, `COALESCE`, `IF`, `SWITCH` over flag columns) for 1,786 cells: 9.0
+  s in Desktop against the cloud database; the same eight as `MIN`/`MAX` without branching: 8.4 s (so the cost is the
+  branching, not `SELECTEDVALUE`); eight plain aggregates in one `SUMMARIZECOLUMNS` straight over the columns: 1.9 s.
+  Moving the cell text ("-" where a period has nothing) and the colour hex strings into the view and making every
+  measure a plain `MAX(column)` gave 2.8 s for the real visual query, and 4,000 of 4,000 compared cells equal the old
+  measures. Plain aggregates over one table fuse into one storage query; each branch splits it. The views themselves
+  answered in under 0.6 s, so time the DAX shape, not the SQL.
+- **Keyword-like names break DAX only at refresh.** A VAR named `Item` and an unquoted table named `Refresh` loaded
+  through TOM and passed a reference audit, then the first TMSL refresh returned `Warning` elements: "The syntax for
+  'Item' is incorrect" and "The syntax for 'Refresh' is incorrect" (the measure's whole text quoted). Treat any
+  `Warning` in a refresh result as a failure; rename the variable, rename or quote the table (here 'Model Refresh').
+- **Desktop prompts a headless cycle must answer.** (1) A model with one source-less import table (a `#table` with
+  the refresh time) next to DirectQuery SQL tables opened with "Potential security risk: This file uses multiple data
+  sources ..." on EVERY open; until OK is pressed the window stays "Untitled" and `DBSCHEMA_CATALOGS` answers nothing.
+  UI Automation does it without focus: window titled "Potential security risk", element `BUTTON` "OK", `Invoke()`.
+  (2) The first open against a new database showed the "SQL Server database" credential dialog (Windows / Database /
+  Microsoft account); the owner signed in once, later opens went straight through. (3) Before the first refresh of
+  the dual tables, the DirectQuery visuals showed "Query has exceeded the available resources" — gone after the
+  refresh and a ribbon Refresh (UIA `Invoke()` on the `BUTTON` "Refresh"); it did not mean the query was too big.
+- **Small shapes confirmed in this build**: a list slicer's dropdown placeholder is
+  `selectionBox.placeholderText`; a gauge shows a percentage text in its centre with `calloutValue` `showDynamicLabels:
+  true` + `dynamicLabelValue: {expr: {Measure: ...}}`; series colours of a stacked column chart are `dataPoint`
+  entries whose selector is `data[0].scopeId.Comparison` on the legend column; a stacked column chart's total labels
+  are the `totals` card.
+- **Names that two rows share break a selection band.** 26 display names were shared by 52 accounts (11 pairs inside
+  one country). A click on the first row field of a tabular matrix filters by that field alone, so the band's
+  `HASONEVALUE(key)` failed for those rows. The view now numbers the shared names in front ("(2) Name", unique per
+  key) and a sort column (`ROW_NUMBER()` over the plain name) keeps the numbered rows with their namesakes; a DAX probe
+  walks the band's states (nothing, one key, key plus a pick, a numbered namesake) to prove it.
