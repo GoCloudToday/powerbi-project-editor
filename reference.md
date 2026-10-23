@@ -3712,3 +3712,30 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
 - **`INFO.PARTITIONS()` over REST `executeQueries` fails (AS 3239575574) even for a workspace Member on a model they
   created**; policy partition names and per-partition refresh times need XMLA. The enhanced refresh record's `objects`
   carry only what was requested (table level here), so per-table timing = one table per request.
+
+#### 2026-10-23 (an input box that must look unusable; proving a reworked DirectQuery view before it goes live; extract keys)
+
+- **Marking an input slicer unusable from data: a tile UNDER it.** A translytical page needed its "new business" box
+  to look disabled while no matrix row was selected (a value typed there is refused on save anyway). The `textSlicer`
+  was given no measure-bound colour (not tried); instead each box got a tile: an `actionButton` with no action, the same
+  position and size, one z-step below the slicer, `icon.shapeType` blank, outline, text, title, background, border and
+  `visualHeader` off, and `fill.fillColor` bound to a measure for the `default` and `hover` selectors (two-entry card:
+  card-level `show` first). The slicer's `inputTextBox.backShow` is `false`, so the box shows the tile through it. The
+  measure returns the disabled grey with no account or no row selected (`[Selected level] = ""`, read from the
+  matrix's cross-filter, as the Save button's text measure already did) and white otherwise. Screenshot in Desktop: the
+  box, its title row and the area around it render grey with no row selected, and the sibling box on its own white
+  tile renders like the other boxes. The slicer on top still takes the clicks; the tile takes none (it is covered).
+  Give every box on the band a tile, or the boxes stop matching (a bare box keeps its own white fill).
+- **Prove a reworked DirectQuery view under its real name's neighbour before it replaces the live one.** The view a
+  published model reads was rewritten (one half now computed from a new column). Before the deploy: create the
+  rewritten view as `<name>_new` (and any brand-new helper views it needs; nothing reads them yet), `EXCEPT`-compare
+  the columns that must not change with the live view (0 of 48,192 rows differed), check the changed half against its
+  inputs directly (every row at the expected value), time a one-key query against the old view (758 vs 418 ms here),
+  then drop the `_new` views and deploy. Seven seconds of SQL instead of a rollback after the live app shows a wrong
+  number.
+- **A generic result-key cleaner keeps a group-by column under its column name.** `executeQueries` returns
+  `Table[Column]` keys for group-by columns and `[Alias]` keys for measures; a helper that strips both left the account
+  key under the source's column name, while the loader read `AccountId`: every row matched a null key and the first load summed to
+  zero (a per-country "the accounts add up to the country" check in the export had passed, since it summed the same
+  rows). Build the extract rows explicitly (`[pscustomobject]@{ AccountId = $_.<column>; ... }`) and have the
+  loader's own summary print the total it placed (it printed zero placed and the whole amount left out, which caught it).
