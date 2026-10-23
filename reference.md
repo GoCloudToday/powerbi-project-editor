@@ -3959,6 +3959,18 @@ A screenshot run (open, engine refresh, ribbon Refresh, page shots, kill) had to
 stayed open with its own session. The project's helpers assumed a single instance: "open" refused when any Desktop
 ran, the engine was the first `msmdsrv` listener, and "close" killed every `PBIDesktop` and `msmdsrv`.
 
+- **CORRECTION, same night: don't run the cycle next to another Desktop at all.** The process scoping below kept the
+  other instance's process and engine alive, but not its report view. After two more cycles next to a freshly opened
+  operator Desktop, that window showed "There's a problem with WebView2" ("Please report the issue to the Power BI
+  Community") over a black canvas. No `msedgewebview2` process of Desktop's WebView2 data folder
+  (`%USERPROFILE%\Microsoft\Power BI Desktop Store App\WebView2\EBWebView`, shared by every Desktop window) was left,
+  and that folder's last writes fell in the same second as the force-close of the cycle's Desktop. The cycle's own
+  ribbon Refresh also failed in both runs (an error dialog at once, no refresh). The operator had to restart their
+  Desktop; anything unsaved there would have been lost. Rule: a helper that opens Desktop refuses while ANY Desktop
+  runs (an explicit override switch for the rare case), and the other window is closed by its owner first. The
+  findings below stay useful for read-only work next to an open Desktop (engine queries, UI reads, screenshots of a
+  window someone else opened).
+
 - **Own the instance by pid AND start time, found by a before/after process diff.** `Start-Process <pbip> -PassThru`
   returns a launcher that can exit at once, so record the `PBIDesktop` pids before the launch and poll for the new one
   (up to 90 s). Store its pid with `StartTime.Ticks`, so a recycled pid of the other instance never passes as yours.
