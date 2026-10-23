@@ -3790,3 +3790,19 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   - an empty array returned from a scriptblock is AutomationNull: `@($x).Count` is 0 (while `@($null).Count` is 1), and
     as an element of `@($x, $y)` piped on it VANISHES, so a per-type label list joined with `|` lost its parts and the
     check compared a 1-part string with the model's 4-part one. Iterate the types, not the per-type key lists.
+- **Role members of a PUBLISHED model by code: TOM over the XMLA endpoint, interactive sign-in.** No REST API sets RLS
+  role members (the dataset user APIs grant dataset permissions, not roles), and an Az-issued token is refused by the
+  XMLA endpoint (§2026-09-21); TOM with no credentials in the connection string signs in interactively. What worked
+  (Windows PowerShell 5.1 in a visible window, `Start-Process powershell.exe -WindowStyle Normal -Wait`): load
+  `Microsoft.AnalysisServices.Core.dll` and `.Tabular.dll` from SSMS 20's `Common7\IDE` folder (that AMO references
+  MSAL 4.43; resolve MSAL from `IDE\Extensions\Application` in an `AssemblyResolve` handler), then
+  `Server.Connect("Data Source=powerbi://api.powerbi.com/v1.0/myorg/<URI-escaped workspace>;")` and
+  `Databases.Find(<dataset id>)` (the database ID is the dataset GUID). Per member an `ExternalModelRoleMember` with
+  `IdentityProvider = 'AzureAD'`: a user by UPN (`MemberType User`), a security group as
+  `obj:<groupObjectId>@<tenantId>` (`MemberType Group`), accepted at the first try; the impersonation gate then showed
+  the group's members in the role. One `Model.SaveChanges()` is one transaction; on a refusal `UndoLocalChanges()` and
+  retry without the group. Guard: refuse to add members to a role without table permissions (they would see
+  everything). The service normalised one UPN's domain to upper case. Needs XMLA read-write on the capacity; after the
+  write the service no longer offers the model as a PBIX download. A group synced from on-premises AD
+  (`onPremisesSyncEnabled: true`, no owners in Entra) can't have members changed through Graph at all: "add them to
+  the group" is a request to its admins, role membership is the model owner's.
