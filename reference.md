@@ -3739,3 +3739,54 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   zero (a per-country "the accounts add up to the country" check in the export had passed, since it summed the same
   rows). Build the extract rows explicitly (`[pscustomobject]@{ AccountId = $_.<column>; ... }`) and have the
   loader's own summary print the total it placed (it printed zero placed and the whole amount left out, which caught it).
+#### 2026-10-23 round 2 (access levels from a spreadsheet: per-page row filters by access type, a slicer that lists only its page's items, a spreadsheet master on a document library)
+
+- **Several access levels in ONE role: type the access rows, filter each page's tables by its own type.** A
+  translytical planning model had dynamic RLS on a user list (`email, type, key`). The owner wanted country access for
+  two pages controlled apart, plus a read-everything level. Instead of one role per level (role members can't be read
+  through the API, and every person would need the right role), the list got typed rows (`GLOBAL`, `READER`,
+  `COUNTRY_CA`, `COUNTRY_TB`, `VERTICAL`, `ACCOUNT`) and the single role a filter per table: the shared country
+  dimension by the UNION of the two country types; each page's DirectQuery fact tables by their page's type only
+  (`SeesAll || 'Fact'[CountryKey] IN MyKeys({"COUNTRY_CA"})`), so a person with only the first type sees none of the
+  second page's figures, not even inside a total. A generator function emitting the filter text from (types, column)
+  keeps the 15 filters consistent; the save procedures check the same type in SQL, so reading and writing can't drift.
+  The read-only level is a type that lifts every filter but that no save check accepts.
+- **A slicer on a shared dimension that lists only its page's items: a visual-level filter on a measure.** RLS on the
+  dimension shows the union, so each page's Country slicer got a visual filter `[Show country CA] = 1` (1 when the user
+  reads everything, has NO rows at all, or has a row of the page's type for the key). The "no rows at all" clause keeps
+  the author's Desktop usable: there `USERPRINCIPALNAME()` returned the Windows sign-in (not the work account the
+  service sees), which has no rows; in the service RLS already hides every country from such a person, so the clause
+  opens nothing. Check in Desktop: `SUMX(ALLNOBLANKROW(Dim[Key]), CALCULATE([Show country CA]))` equals the full count.
+- **Testing per-type filters on the local engine.** The per-person check copies the role filters out of the model
+  definition (the local engine refuses `EffectiveUserName` with a UPN; query-defined measures don't reach model
+  measures) and evaluates each fact table's filter over the DIMENSION's keys by swapping the table's key column for
+  the dimension's (`.Replace("'Fact'[CountryKey]", 'Dim[CountryKey]')`), plus a text check that each table's filter
+  names its own type and not the other. Levels the real list didn't hold yet were tested with temporary rows under
+  `@example.invalid` addresses: insert, refresh Desktop (the list table is dual, so imported), run, delete, refresh.
+- **A spreadsheet as the access master on a document library (Graph):**
+  - `PUT /drives/{id}/items/{id}/content` while someone has the workbook open in Excel answers 423 `resourceLocked`
+    for as long as it stays open (a 45-minute retry loop never got through). Closing it in Excel saved one more version
+    with identical sheets (an autosave on close); the PUT then went through at once.
+  - Before replacing a master someone edits, download it and diff every sheet against the copy you last saw; merge by
+    key (keep the master's rows as they are, add generated rows it lacks only behind an explicit switch, never remove);
+    refuse to overwrite at all without an explicit replace switch.
+  - The sensitivity label lives in `docProps/custom.xml` (`MSIP_Label_<labelId>_Enabled`, `_Name`, `_SetDate`,
+    `_Method`, `_SiteId`, `_ActionId`, `_ContentBits`): a workbook regenerated from scratch loses it unless that part
+    (with its content-type override and package relationship) is carried over. The library DEMOTES its own columns into
+    that part on download (a library-specific `ContentTypeId`, `_dlc_DocIdItemGuid`) and rewrites them on upload: the
+    stored file's part differed from the uploaded one and equalled the version before. Compare only the `MSIP_Label_*`
+    properties when checking that a label survived.
+- **Open XML: double an apostrophe of a sheet name inside defined names.** A sheet named `Owner's list` with an
+  autofilter needs `_xlnm._FilterDatabase` = `'Owner''s list'!$A$1:$H$75`; with a single apostrophe Excel opened the
+  file only after "We found a problem with some content ... Do you want us to try to recover as much as we can?".
+- **PowerShell traps that corrupted generated tables silently** (each one passed a parse check):
+  - rows written one per line inside `@( ... )` without trailing commas flatten into one list of strings (a 6 x 4
+    table became 24 strings): end each row line with a comma, and assert the shape (`$t.Count -eq 6 -and @($t[0]).Count -eq 4`);
+  - a one-row table `@(@('a', 'b'))` flattens too: write `@(,@('a', 'b'))`;
+  - the comma binds before `+`: `@('a', 'b' + "x" + 'c')` is `@('a', 'b') + 'x' + 'c'` (array concatenation, which
+    dropped a header row here): parenthesise string sums inside array literals;
+  - a function returning `, @($rows)` (to keep an array intact) gets one more wrapper from a caller's `@(...)`: assign
+    its result directly;
+  - an empty array returned from a scriptblock is AutomationNull: `@($x).Count` is 0 (while `@($null).Count` is 1), and
+    as an element of `@($x, $y)` piped on it VANISHES, so a per-type label list joined with `|` lost its parts and the
+    check compared a 1-part string with the model's 4-part one. Iterate the types, not the per-type key lists.
