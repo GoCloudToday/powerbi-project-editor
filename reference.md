@@ -3806,3 +3806,42 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   write the service no longer offers the model as a PBIX download. A group synced from on-premises AD
   (`onPremisesSyncEnabled: true`, no owners in Entra) can't have members changed through Graph at all: "add them to
   the group" is a request to its admins, role membership is the model owner's.
+
+#### 2026-10-23 round 3 (choice inputs for a data function: list slicer dropdown mode, button slicer, hidden selections; report page images without Desktop)
+
+- **A list slicer in dropdown mode is hand-authorable and works as a data function input.** Shape that loaded in
+  Desktop (October 2026 build) with no error and rendered as a dropdown ("Select <field>", chevron): `visualType:
+  listSlicer`, one `Values` projection, `objects.data[0].properties.dropdownMode = {expr: {Literal: {Value:
+  "true"}}}`, `objects.selection[0].properties` `singleSelect` true / `strictSingleSelect` false /
+  `selectAllCheckboxEnabled` false. The dropdown mode (preview) was only named in the theme schema
+  (`data.dropdownMode`) and in no saved file before; this is the first round trip.
+- **Button slicers (`advancedSlicerVisual`) and list slicers bind exactly like input slicers**: a `SlicerParameter`
+  entry `{name, dataType: "string", isOptional, defaultValue: null, type: "SlicerParameter", slicer: "<visual
+  name>", autoClear: true}`. Tested in the service with one button and four bound slicers (button slicer required,
+  two list slicer dropdowns and an input slicer optional): the text of the slicer's Values field arrived, an
+  optional slicer with nothing picked arrived as an empty string, the button stayed grey until the required button
+  slicer had a pick, and auto clear reset the button and list slicers as well as the input slicer.
+- **A selection that another slicer hides is still SENT to the function.** A child list (options related to a
+  parent options table, so the parent slicer filters it) kept its pick when the parent changed to a value whose
+  children exclude it; the button then sent the new parent together with the hidden child (the docs say only that
+  such selections are not cleared). The report can't prevent the mismatch: validate every parent/child pair in the
+  function and answer with a message the user can act on.
+- **Data function buttons run only in the service, so test them with throwaway items created by REST**: a
+  SemanticModel from its TMDL parts (`POST /workspaces/{ws}/semanticModels`, definition parts; calculated tables
+  only, so no data source and no credentials), then a Report from its PBIR parts with a `byConnection`
+  `definition.pbir` pointing at the new model id, then one Power BI REST refresh (it processes the calculated tables;
+  assert the rows with `executeQueries`, not the status). Snapshot the workspace before, delete by recorded ids
+  after (check type, name and folder first), diff against the snapshot. A report create answered `Operation Failed:
+  MissingDefinitionParts: definition.pbir` although the file was there: the part paths were garbled because the
+  base folder was an 8.3 short `%TEMP%` path while the children enumerated long, so slicing by length cut the names.
+  Take the base from `(Get-Item -LiteralPath $folder).FullName`.
+- **Images of every page of a published report, without Desktop**: Power BI REST `POST
+  groups/{ws}/reports/{id}/ExportTo` with `{"format":"PNG"}`, poll `exports/{exportId}` until `Succeeded`, `GET
+  .../file` = a zip with one PNG per visible page at twice the page size (2560 x 1460 for 1280 x 720); 8 pages took
+  about 70 s on a capacity workspace; hidden pages are left out. Read only; handy as a design reference while the
+  owner's own Desktop session must stay untouched. The images carry the report's real figures: keep them local.
+- **PowerShell array literals: the comma binds tighter than `+`.** `@($label, 'x', $i + 1)` is `@(($label, 'x', $i)
+  + 1)`, four elements, so a generated DATATABLE got a fourth column value on every row. Parenthesise arithmetic
+  inside array literals (`($i + 1)`). `-and` and `-or` share one precedence and run left to right, so mixed
+  conditions need parentheses too. `SP` is the built-in alias of `Set-ItemProperty`: a helper of that name
+  silently became a property write that failed on a relative path (same trap family as `H` and `Diff`).
