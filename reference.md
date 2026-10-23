@@ -3805,7 +3805,9 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   everything). The service normalised one UPN's domain to upper case. Needs XMLA read-write on the capacity; after the
   write the service no longer offers the model as a PBIX download. A group synced from on-premises AD
   (`onPremisesSyncEnabled: true`, no owners in Entra) can't have members changed through Graph at all: "add them to
-  the group" is a request to its admins, role membership is the model owner's.
+  the group" is a request to its admins, role membership is the model owner's. **The members survive a later Desktop
+  publish (Replace)** of the same project, whose role has no members in its TMDL: the impersonation gate right after
+  the publish gave the same answer for every person, group members and named users alike (round 7 of the same day).
 
 #### 2026-10-23 round 3 (choice inputs for a data function: list slicer dropdown mode, button slicer, hidden selections; report page images without Desktop)
 
