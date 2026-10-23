@@ -3950,3 +3950,29 @@ the selected states.
   without a space (`Contoso*`) matches, which makes it look intermittent. Enumerate the elements and compare
   `name.Replace(' ', ' ')`. A click on a matrix row header cell selects the line (the visuals it filters update);
   a click on a button slicer button picks it.
+
+#### 2026-10-23 round 7 (a full headless capture cycle next to another project's Desktop; generator output that never matches byte for byte)
+
+A screenshot run (open, engine refresh, ribbon Refresh, page shots, kill) had to run while another project's Desktop
+stayed open with its own session. The project's helpers assumed a single instance: "open" refused when any Desktop
+ran, the engine was the first `msmdsrv` listener, and "close" killed every `PBIDesktop` and `msmdsrv`.
+
+- **Own the instance by pid AND start time, found by a before/after process diff.** `Start-Process <pbip> -PassThru`
+  returns a launcher that can exit at once, so record the `PBIDesktop` pids before the launch and poll for the new one
+  (up to 90 s). Store its pid with `StartTime.Ticks`, so a recycled pid of the other instance never passes as yours.
+  Fallback for a window opened by hand: `MainWindowTitle` begins with the .pbip's base name. During the load the title
+  is `Untitled - Power BI Desktop`, so the fallback only works once the report has loaded.
+- **The engine is the `msmdsrv` whose `ParentProcessId` is that pid** (seen on both instances); dial its listening
+  port. Close = kill exactly that pid, then its engine children. Through a full cycle (open, refreshes, kill) and a
+  second open, the other instance and its engine kept their pids.
+- **UI-automation finders keyed by executable name match the other instance's windows.** A "stray dialog" or "refresh
+  progress dialog" search over `of: "PBIDesktop.exe"` must also require the report window's process id
+  (`wnd.ProcessId` in LibreAutomate), or it can close, or wait on, the other session's dialog.
+- **A PowerShell 7 generator writes JSON keys in a different order on every run.** `@{}` hashtables order their keys by
+  a string hash that .NET randomizes per process. Two runs of one generator on the same input gave the same report
+  with keys reordered: 150 of 150 report files differed byte for byte, and 155 of 155 were identical as JSON with the
+  order ignored. Byte or text diffs of generated PBIR are noise: compare order-insensitively, or build with
+  `[ordered]@{}` where stable files matter (stable files also keep source-control diffs small).
+- **Calibrate a comparer that says everything differs.** The first order-insensitive comparer reported all 150 files as
+  changed: `ConvertTo-Json -Depth 200` throws (the maximum is 100), its try/catch fell back to the raw text, and the raw
+  text differed by key order. When a comparer finds every file changed, suspect the comparer before the build.
