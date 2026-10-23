@@ -3920,3 +3920,33 @@ for every defect listed, so only the engine and screenshots found them.
   work. Resolve the instance by `Win32_Process.CommandLine` (it holds the .pbip path) and its engine by
   `ParentProcessId`. With about 2 GB of commit headroom left, a second instance for a 150 MB model is not safe: verify
   through the offline gates and the service engine, and hand the open to the operator.
+
+#### 2026-10-23 round 6 (a design review pass on a generated report: header alignment, button slicer states, a stuck headless refresh, screen reader names)
+
+The owner asked for a design review before publishing ("labels to centre, formatting"). Every finding below was seen at
+98% zoom in Desktop and re-checked after the change; a line and a category were picked through UI Automation to see
+the selected states.
+
+- **Matrix header alignment has two properties.** `columnHeaders.alignment` positions the column field's value
+  headers (the period names spanning their value columns) and the value captions; `columnHeaders.titleAlignment`
+  positions the captions over the row fields. With `alignment: 'Auto'` the period names sat at the left edge of their
+  group; `'Center'` centred them over their columns. Both `'Center'` gives one consistent header row.
+- **Row headers have no per field alignment.** A numeric row field (revenue next to names and codes) stayed left
+  aligned with `rowHeaders.alignment = 'Auto'` and with a `columnFormatting` entry whose selector names the field;
+  only `rowHeaders.alignment = 'Right'` moves it, and that moves every row field. Keep such a figure a value, or accept
+  the left alignment.
+- **Button slicer states use the selectors Desktop writes**: `selection:selected`, `interaction:hover` and
+  `interaction:press`, on `value` (fontColor), `fillCustom` (fillColor) and `outline` (lineColor), plus
+  `shapeCustomRectangle` (`tileShape: 'rectangleRoundedByPixel'`, `rectangleRoundedCurve: 8`) for pill buttons; text
+  centred with `value.horizontalAlignment: 'center'` under selector id `default`. Bold on the selected state widened
+  the text and cut a 15-character label in a 102 px button; the same label fit without bold.
+- **A headless refresh plus the ribbon Refresh can leave Desktop stuck.** After a restart, a TMSL refresh over the
+  engine port followed by the ribbon Refresh (UIA `Invoke()`) left a "Working on it" dialog (a 520 x 92 window of
+  Desktop) up for minutes in three of three runs, with the engine idle (`DISCOVER_COMMANDS` all at 0 ms); every
+  screenshot carried the dialog. The ribbon Refresh alone settled in about a minute. Gate the screenshots on "no
+  other visible Desktop window, and every partition ready" twice in a row, polled every 15 s.
+- **Screen reader names of report content use no-break spaces.** Matrix cells and slicer buttons expose their text
+  with U+00A0 between words: a UIA name filter with ordinary spaces finds nothing (exact or wildcard), while a prefix
+  without a space (`Contoso*`) matches, which makes it look intermittent. Enumerate the elements and compare
+  `name.Replace(' ', ' ')`. A click on a matrix row header cell selects the line (the visuals it filters update);
+  a click on a button slicer button picks it.
