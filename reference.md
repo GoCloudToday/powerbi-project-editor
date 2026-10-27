@@ -4053,3 +4053,27 @@ current page button); the same script read the old screenshot first to calibrate
 - **A matrix may scroll sideways on purpose**: its row headers stay in place while the value columns scroll. When
   columns are added at the owner's request, make the generator check "row headers plus one column group fit", not
   "everything fits".
+
+#### 2026-10-27 round 10 (when Pipelines are blocked: a Power Automate flow loads the Excel lists)
+
+- **A scheduled Power Automate flow can stand in for a Fabric pipeline** that a tenant policy blocks. Shape that ran
+  end to end on the first try (8 steps, 41 s): Excel Online (Business) "Run script from SharePoint library"
+  (`RunScriptProdV2`) runs an Office Script that returns the first sheet as a JSON string; SQL Server "Execute stored
+  procedure (V2)" passes it to a procedure that `OPENJSON`s it into the raw positional stage (see round 9) and runs the
+  merge; Power BI "Run a query against a dataset" (`ExecuteDatasetQuery`, output `firstTableRows`) reads another model
+  with DAX that a SQL view builds (the key list inside a `TREATAS`), and a procedure writes the rows back; Power BI
+  "Refresh a dataset" last. The flow was created over the Power Automate API (definition + connectionReferences,
+  state Stopped, then `start` and `triggers/<name>/run`); only the connections need the portal (one sign-in each).
+- **The Office Script file can be written by hand.** An `.osts` JSON envelope `{version: "0.3.0", body, description,
+  noCodeMetadata: "", parameterInfo, apiInfo}` with `parameterInfo` = `{version: 1, originalParameterOrder: [],
+  parameterSchema: {type: "object", default: {}, "x-ms-visibility": "internal"}, returnSchema: {type: "object",
+  properties: {result: {type: "string"}}}, signature: {comment: "", parameters: [{name: "workbook", comment: ""}]}}` and
+  `apiInfo` = `{variant: "synchronous", variantVersion: 2}` (both as JSON strings), uploaded by Graph to a document
+  library, ran and returned `body/result`. The action's ids are Graph ids: `source` = `sites/<graph site id>`, `drive` =
+  the library's drive id, `file` = the item id.
+- **Rehearse the flow's data path before building it**: the same JSON the script returns, built from the file in a
+  script, through the same procedures (check-only first), gave the same counts as the script load; the flow's run then
+  matched to the cent.
+- **One of a person's own connections can still be refused** when a flow is saved: `ConnectionAuthorizationFailed`
+  ("cannot be used to activate this flow ... not a connection you have access permission for") for one of two Power BI
+  connections listed under the same account; the other worked.
