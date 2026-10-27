@@ -4029,3 +4029,27 @@ current page button); the same script read the old screenshot first to calibrate
   `ParentProcessId`, and refuses while any other Desktop runs. Calibrated by running it with another project's file
   name: the running Desktop then counts as another one, the close refused, and one Desktop and one engine were still
   running; the real close then stopped exactly one of each.
+
+#### 2026-10-27 round 9 (publishing from Desktop by UI Automation, a Fabric item policy, an Excel list load)
+
+- **Desktop's Publish can be driven end to end through UI Automation.** Ribbon BUTTON "Publish" `Invoke()`; a PBIP
+  with unsaved state first asks "Do you want to save your changes?" (BUTTON "Save": Desktop rewrites the project
+  files); then a window with STATICTEXT "Publish to Power BI" and one LISTITEM per workspace (`Select` + `Invoke` on the
+  item, then BUTTON "Select"); "Replace this dataset?" (BUTTON "Replace"); "Success!" with BUTTON "Got it". All are
+  top-level WinForms windows of the Desktop process with full UIA trees. The workspace list shows no folders, yet a
+  Replace kept both items (same ids) in their folder; impersonated queries for role members answered with data right
+  after (role members kept).
+- **A tenant item-creation policy can block Pipelines.** The portal's new-item dialog answered "Item creation blocked.
+  You are not allowed to create Pipeline due to item creation policies. Contact your admin for access." in a workspace
+  where SQL databases and user data functions could still be created. Before designing a scheduled load around a
+  pipeline, create one empty pipeline (or ask the admin which item types are allowed).
+- **Load a business Excel list through a raw positional stage, mapped by header in SQL.** The first sheet goes into
+  a table with columns Prop_0..Prop_n (the names a pipeline Copy activity gives a sheet read without a header row) and
+  an identity Id = sheet row; a view unpivots each row with `CROSS APPLY (VALUES (0, Prop_0), ...)`, normalises the
+  header row (lower case, spaces, NBSP, "/", "-" removed) and pivots back by header name. Column order, extra columns and
+  header spacing stop mattering (a real list had "Local Customer  Key" with two spaces and headers with trailing
+  spaces), and the merge procedure refuses to apply when a needed header is missing. The same list's sheet was named
+  "Overview  " with two trailing spaces, so a lookup by sheet name failed: read the first sheet by position.
+- **A matrix may scroll sideways on purpose**: its row headers stay in place while the value columns scroll. When
+  columns are added at the owner's request, make the generator check "row headers plus one column group fit", not
+  "everything fits".
