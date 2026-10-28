@@ -4161,3 +4161,20 @@ current page button); the same script read the old screenshot first to calibrate
   `localTimeZoneId`; the refresh history in UTC moves by an hour at the DST change, so a recurrence in the same zone,
   halfway between two refreshes, keeps its margin all year. A model's own "last refreshed" table may lag (one read a
   day older than the service's last completed refresh): date the data by the run, or by the refresh history.
+
+#### 2026-10-28 round 13 (publish without an operator, then the app: a transient "no role" and the app update over CDP)
+
+- **An impersonation check right after a publish can report a nested-group member as in no role.** A minute after a
+  Replace publish and a REST refresh, `executeQueries` with `impersonatedUserName` for one person who reaches the role
+  only through a security group nested in the role's group came back `RLSNotAuthorizedForModel`; the other 51
+  (direct group members and members by name) answered as the role. The same check a few minutes later answered as
+  the role with the right filters. Recheck after a few minutes before adding anyone to a role by name.
+- **A workspace app has no update API; a signed-in browser over CDP does it.** The workspace page's button "Update
+  app" opens `/groups/<ws>/apps/build/setup`; "Update app" at its bottom opens a dialog ("When you update an app that
+  has large distribution ...") with "Update"; then "Successfully published" with the app link, "Go to app" and
+  "Close". A JS `element.click()` on the button with that exact text worked for all three, and the app's `lastUpdate`
+  (`GET /v1.0/myorg/apps`) moved at once. Check the signed-in account on the Power BI page itself first (open the
+  "Account manager" panel, read the email in its text, close it): browser SSO can pick another account. Work in a new
+  tab of your own (`PUT /json/new?<url>`, close it with `/json/close/<id>`), never in a tab someone else uses.
+- **One app per workspace**: updating it for one report republishes the current version of every item it includes,
+  so tell the other publishers of that workspace.
