@@ -4121,3 +4121,43 @@ current page button); the same script read the old screenshot first to calibrate
   published model reads the old ones until the new model is published), new reference rows held out of the old
   dropdown's bridge table, a project copy with its generators in a backup folder, and the load procedure run once with
   apply off against the rows the scheduled load staged last, before its next scheduled run.
+
+#### 2026-10-28 round 12 (the same kind of flow at volume: a whole model extract and its rules, every day)
+
+- **Hundreds of questions in one flow run.** A daily load that used to be a script (per-country DAX against a
+  published CRM reporting model, then rules, then a merge) moved into one Power Automate flow and SQL procedures: a
+  procedure returns the questions (`Seq, Entity, Key, Dax`; 6 global ones, then 5 per active country, ~370 in all,
+  the second set built from the staged answer of the first), the native query action reads them, and an Apply to each
+  with `runtimeConfiguration.concurrency.repetitions = 1` asks each one ("Run a query against a dataset") and passes
+  `@{string(body('Ask')?['firstTableRows'])}` to a staging procedure. Measured on the first run: 376 questions in
+  8 min 51 s end to end (sequential from a machine: 54 a minute; the Power BI connector allows 100 calls a minute per
+  connection), the largest answer 2.2 MB, the slowest 21 s (the outbound call limit is 120 s). The rules and the
+  merge ran as three separate procedure calls of 0.5 to 4 s each: the SQL Server connector ends any call after 110 s,
+  so time each step from a machine before choosing one call or several.
+- **Let every answer carry its own row count.** `EVALUATE VAR t = CALCULATETABLE(...) RETURN SELECTCOLUMNS(t, ...,
+  "__n", COUNTROWS(t))`: the staging procedure compares `MAX(JSON_VALUE(value, '$."[__n]"'))` with the rows it got and
+  refuses a cut answer (the 15 MB cap truncates silently). The same trick carries a total to check against
+  (`"__total", <the page's card measure>`), so the sum of the rows is proven too. A cross-answer check (rows of one
+  question against a count in another) runs once all are staged, before the rules.
+- **Rehearse the exact path, with the answers as raw text.** A script that takes the questions from the same
+  procedure, posts each to `executeQueries` and hands the procedure the rows as the service wrote them
+  (`[Text.Json.JsonDocument]::Parse($r.Content).RootElement.GetProperty('results')[0].GetProperty('tables')[0].GetProperty('rows').GetRawText()`,
+  not ConvertFrom-Json plus ConvertTo-Json, which re-type dates and numbers) built the same load set as the old script
+  (row by row, every table), and the flow's own first run built the same set as the rehearsal in every table.
+- **`@{...}` in an action parameter turns NULL into empty text**: a question without a key reached a `CHAR(2)`
+  parameter as two spaces. Normalize inside the procedure (`SET @Key = NULLIF(LTRIM(RTRIM(@Key)), '')`).
+- **A stopped flow refuses a manual run**: `triggers/<name>/run` gave 400 `WorkflowTriggerIsNotEnabled` ("trigger is not
+  enabled"). Switching it on (`POST .../flows/<id>/start`) arms the schedule too, so set the recurrence `startTime` to
+  the first scheduled run you want.
+- **`@actions('<scope>')?['status']` works in a Condition** (`{"and": [{"equals": ["@actions('Rates')?['status']",
+  "Succeeded"]}, ...]}` took the true branch after both scopes succeeded), so a run can refresh the model after a
+  failed optional step and still end as failed (a Terminate in the false branch) for the owner's failure mail.
+- **An Office Script that returns rows of cells (header first) can feed a loader written for objects**: inside the
+  procedure, `JSON_QUERY(@Json, '$[0]')` starting with `[` means rows of cells; find each column by its header
+  (`OPENJSON` over the header row), rebuild objects with `JSON_VALUE(c.value, CONCAT('$[', @i, ']'))` (a computed
+  path works on Azure SQL and Fabric SQL databases) and `FOR JSON PATH, INCLUDE_NULL_VALUES`, and the rest of the
+  procedure stays as it was. A wrong header is refused, a third column and empty rows are ignored.
+- **Schedule the reader in the source's own time zone.** `GET .../datasets/<id>/refreshSchedule` gives the times and
+  `localTimeZoneId`; the refresh history in UTC moves by an hour at the DST change, so a recurrence in the same zone,
+  halfway between two refreshes, keeps its margin all year. A model's own "last refreshed" table may lag (one read a
+  day older than the service's last completed refresh): date the data by the run, or by the refresh history.
