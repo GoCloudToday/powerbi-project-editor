@@ -4077,3 +4077,43 @@ current page button); the same script read the old screenshot first to calibrate
 - **One of a person's own connections can still be refused** when a flow is saved: `ConnectionAuthorizationFailed`
   ("cannot be used to activate this flow ... not a connection you have access permission for") for one of two Power BI
   connections listed under the same account; the other worked.
+
+#### 2026-10-28 round 11 (a periodic feedback tool turned continuous: latest entry and the one before, months instead of two-week slots, a changes page)
+
+- **`Before` is another VAR name that fails only at refresh.** `VAR Before = MAX('T'[BeforeText])` passed TOM and the
+  static reference audit; the engine check after a Desktop refresh reported "The syntax for 'Before' is incorrect"
+  (state 5). Same family as `Item`, `Rows`, `Month`: prefix VARs (`PrevEntry`).
+- **An escaped quote inside `$( )` of a double-quoted PowerShell string belongs to the outer string.**
+  ``"FORMAT($(CountWhere "T[Code] = `"X`"") , `"#,0`")"`` produced `T[Code] = )`: the literal vanished and the measure
+  failed at refresh with "The syntax for ')' is incorrect". Build the inner text into a variable first and join
+  single-quoted pieces.
+- **An engine gate must read every count line.** The pattern `with errors: 0\s` over "measures: 92 with errors: 2" and
+  "columns: 148 with errors: 0" matched the columns line and let two broken measures through. Fail on any
+  `with errors: [1-9]` and require one zero per line.
+- **No date picker can feed a data function button** (docs read 2026-10-28, the button page dated 2026-09-29): a
+  parameter maps to a button, list or input slicer, a field or a measure; the input slicer is free text over text and
+  numeric columns (a numeric-only switch, no date mode). For a planned date offer a list slicer of months in dropdown
+  mode, read from a DirectQuery view so a month drops off once it is over. When older entries used another scheme
+  (two-week slots, quarters), leave those codes valid in the save procedure and map them through a bridge column: a
+  two-week slot counts in the month most of its days fall in (the Monday of its second week decides), a quarter in its
+  last month, a year in its December.
+- **A generator can preselect a classic slicer.** `objects.general[0].properties.filter = {filter: {Version: 2, From:
+  [{Name: "p", Entity: <table>, Type: 0}], Where: [{Condition: {In: {Expressions: [{Column: {Expression: {SourceRef:
+  {Source: "p"}}, Property: <column>}}], Values: [[{Literal: {Value: "'<value>'"}}]]}}}]}}` showed the value picked on
+  the first open in Desktop. Let the measures default too (`COALESCE(SELECTEDVALUE(Span[Key]), "<default>")` inside a
+  CALCULATE on the many side), so a slicer left empty can never add up several spans.
+- **"Status at the start of a span against now" as one DirectQuery view**: a row per (span, entity) with the status of
+  the last entry before the span start (`OUTER APPLY TOP (1) ... ORDER BY SavedUtc DESC`) and the latest one; a small
+  dual span table related to it; a matrix with rows = status then, columns = status now, both totals on. Four spans over
+  1,577 entities answered in 0.2 s. Clamp every span start to the start of the tracking, or the lists the tool started
+  from all count as added.
+- **A log table that shows the span, or everything for one picked entity**: a visual-level measure filter
+  `IF(COUNTROWS(ALLSELECTED(Dim[Key])) = 1 || (MIN(Log[IsStartList]) = 0 && MIN(Log[AgeDays]) < Days), 1)` on a table
+  of log columns plus dimension columns. ALLSELECTED sees the slicer pick, while every row of the table has a single
+  key in its own context (so ISFILTERED or HASONEVALUE cannot tell the two cases apart).
+- **A bold 9 pt matrix header of 15 characters without a space needs about 108 px**: at 84 and 98 px Power BI broke
+  the word in the middle; a header with a space wraps at the space.
+- **Replace a published report's logic without breaking the version in use**: new views beside the old ones (the
+  published model reads the old ones until the new model is published), new reference rows held out of the old
+  dropdown's bridge table, a project copy with its generators in a backup folder, and the load procedure run once with
+  apply off against the rows the scheduled load staged last, before its next scheduled run.
