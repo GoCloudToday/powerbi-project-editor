@@ -4178,3 +4178,25 @@ current page button); the same script read the old screenshot first to calibrate
   tab of your own (`PUT /json/new?<url>`, close it with `/json/close/<id>`), never in a tab someone else uses.
 - **One app per workspace**: updating it for one report republishes the current version of every item it includes,
   so tell the other publishers of that workspace.
+
+
+#### 2026-10-28 round 14 (a date picker feeding a data function button, tested in the service)
+
+- **The date picker slicer reached the data function through a measure, end to end in the service.** PBIR: a classic
+  slicer (`visualType: slicer`) with `objects.data[0].properties.mode = 'RelativeDatePicker'` (the theme schema 2.159
+  lists it as "Date Picker" beside Between, Before, After, Relative) and `objects.selection[0].properties.singleDate =
+  true`, on a date column of an import table related to nothing (M `List.Dates` from the refresh day to a fixed end).
+  The service drew a calendar with Manual / Relative tabs, month arrows ("Previous month" / "Next month") and Apply; a
+  measure `IF(ISFILTERED(T[Date]), FORMAT(MIN(T[Date]), "yyyy-mm-dd"))` bound as a value parameter sent the picked day
+  and the save procedure stored it. The slicer holds its pick after the save (the bound button slicer cleared itself),
+  so put the picked day in the button's own text ("Save: 16 Nov 2026").
+- **A button slicer's pick did not reach that date picker**: the picker's title measure stayed on its default text, and
+  a visual filter "measure = 1" copied from the dropdowns (the measure reads the button slicer) made the picker write
+  "No data in this date range" under a picked day. Leave such a filter off the date picker.
+- **The page in view in Desktop at Publish becomes the report's start page** (Desktop's save rewrites `pages.json
+  activePageName`): a capture script that walked every page left the published report opening on its last page. Open
+  the first page before pressing Publish.
+- **Driving a report in the service over CDP** (beside round 13's app update): a script `click()` on the Pages pane's
+  `button[role=tab]` switched pages where a CDP mouse click only hovered it; matrix row header cells (`role=rowheader`),
+  button slicer items, the calendar's day cells and Apply took CDP mouse clicks at their centres; the data function's
+  answer went to the notification bell rather than a toast the page kept.
