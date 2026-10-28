@@ -4090,14 +4090,18 @@ current page button); the same script read the old screenshot first to calibrate
 - **An engine gate must read every count line.** The pattern `with errors: 0\s` over "measures: 92 with errors: 2" and
   "columns: 148 with errors: 0" matched the columns line and let two broken measures through. Fail on any
   `with errors: [1-9]` and require one zero per line.
-- **No date picker can feed a data function button** (docs read 2026-10-28, the button page dated 2026-09-29): a
-  parameter maps to a button, list or input slicer, a field or a measure; the input slicer is free text over text and
-  numeric columns (a numeric-only switch, no date mode). For a planned date offer a list slicer of months in dropdown
-  mode, read from a DirectQuery view so a month drops off once it is over. When older entries used another scheme
-  (two-week slots, quarters), leave those codes valid in the save procedure and map them through a bridge column: a
-  two-week slot counts in the month most of its days fall in (the Monday of its second week decides), a quarter in its
-  last month, a year in its December.
-- **A generator can preselect a classic slicer.** `objects.general[0].properties.filter = {filter: {Version: 2, From:
+- **A date picker feeds a data function button only through a measure** (docs read 2026-10-28; correction of the first
+  wording of this entry, which said it cannot). A parameter maps to a button, list or input slicer, a field or a
+  measure; only the new button, list and input slicers bind directly. An older slicer, and the date picker slicer
+  (preview since mid 2026, a single date on a calendar), needs a DAX measure that reads its pick, for example
+  `IF(ISFILTERED(Pick[Date]), FORMAT(MIN(Pick[Date]), "yyyy-mm-dd"))` over a date table related to nothing, bound as a
+  value parameter (the same way an account key from a table selection is bound). Such an input is not cleared after a
+  save, so show the picked date next to the button. The input slicer is free text over text and numeric columns (a
+  numeric-only switch, no date mode). The other way is a list slicer of months in dropdown mode, read from a
+  DirectQuery view so a month drops off once it is over. When older entries used another scheme (two-week slots,
+  quarters), leave those codes valid in the save procedure and map them through a bridge column: a two-week slot counts
+  in the month most of its days fall in (the Monday of its second week decides), a quarter in its last month, a year in
+  its December.- **A generator can preselect a classic slicer.** `objects.general[0].properties.filter = {filter: {Version: 2, From:
   [{Name: "p", Entity: <table>, Type: 0}], Where: [{Condition: {In: {Expressions: [{Column: {Expression: {SourceRef:
   {Source: "p"}}, Property: <column>}}], Values: [[{Literal: {Value: "'<value>'"}}]]}}}]}}` showed the value picked on
   the first open in Desktop. Let the measures default too (`COALESCE(SELECTEDVALUE(Span[Key]), "<default>")` inside a
