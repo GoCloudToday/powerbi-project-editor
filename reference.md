@@ -4147,8 +4147,8 @@ current page button); the same script read the old screenshot first to calibrate
 - **`@{...}` in an action parameter turns NULL into empty text**: a question without a key reached a `CHAR(2)`
   parameter as two spaces. Normalize inside the procedure (`SET @Key = NULLIF(LTRIM(RTRIM(@Key)), '')`).
 - **A stopped flow refuses a manual run**: `triggers/<name>/run` gave 400 `WorkflowTriggerIsNotEnabled` ("trigger is not
-  enabled"). Switching it on (`POST .../flows/<id>/start`) arms the schedule too, so set the recurrence `startTime` to
-  the first scheduled run you want.
+  enabled"). Switching it on (`POST .../flows/<id>/start`) arms the schedule too. Do NOT set the recurrence
+  `startTime` to the very slot of the first run you want: that slot was skipped (2026-10-29 below).
 - **`@actions('<scope>')?['status']` works in a Condition** (`{"and": [{"equals": ["@actions('Rates')?['status']",
   "Succeeded"]}, ...]}` took the true branch after both scopes succeeded), so a run can refresh the model after a
   failed optional step and still end as failed (a Terminate in the false branch) for the owner's failure mail.
@@ -4200,3 +4200,19 @@ current page button); the same script read the old screenshot first to calibrate
   `button[role=tab]` switched pages where a CDP mouse click only hovered it; matrix row header cells (`role=rowheader`),
   button slicer items, the calendar's day cells and Apply took CDP mouse clicks at their centres; the data function's
   answer went to the notification bell rather than a toast the page kept.
+#### 2026-10-29 round 15 (the first scheduled days of a daily flow)
+
+- **A recurrence whose `startTime` is the slot itself skipped that slot.** Two flows made through the Flow API with
+  `recurrence: {frequency: Day, interval: 1, timeZone: <zone>, startTime: "<day>T10:00:00", schedule: {hours: ["10"],
+  minutes: [0]}}` (the other at 06:00), switched on the day before (one also run by hand that night): neither ran at
+  that slot on that day; both first ran at the slot of the next day, and daily since. A watcher waiting for the first
+  slot saw no run. Give `startTime` a time before the first slot (the day before, or midnight of that day), and check
+  that the first scheduled run happened (GET `.../runs`) instead of trusting the schedule.
+- **A key with a fallback can collide on the display name.** A load grouped accounts by an external code, and the
+  accounts the code export did not place by name plus vertical; the target table had a unique constraint on (name,
+  vertical). Accounts that joined the segment after the last code export made fallback groups whose name was a code
+  group's name, and the one-transaction merge failed on the first (`Violation of UNIQUE KEY constraint`; nothing
+  written, XACT_ABORT). Fold a fallback group into the code group of the same name and vertical before writing the
+  load set, comparing in the target column's collation (`COLLATE DATABASE_DEFAULT` on the temp-table comparison: the
+  constraint also caught a pair that differed only in case); mirror the fold in any offline twin of the rules and
+  recheck the twin on an extract where it must change nothing.
