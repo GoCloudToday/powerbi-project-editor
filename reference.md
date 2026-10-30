@@ -4216,3 +4216,48 @@ current page button); the same script read the old screenshot first to calibrate
   load set, comparing in the target column's collation (`COLLATE DATABASE_DEFAULT` on the temp-table comparison: the
   constraint also caught a pair that differed only in case); mirror the fold in any offline twin of the rules and
   recheck the twin on an extract where it must change nothing.
+
+#### 2026-10-30 round 16 (publish with the session locked; a design pass on service screenshots)
+
+- **A locked Windows session stops Desktop's publish dialogs, not the engine.** With the lock screen up, a UI
+  Automation `Invoke` on the ribbon "Publish" button still worked, but every following step (finding the save,
+  workspace and replace dialogs) hung until its 60 s timeout, and screenshots failed ("the main input desktop is
+  inactive"). DAX against the local engine kept working.
+- **Publish without Desktop: Fabric `updateDefinition` for the model and the report.** Model (format TMDL):
+  `definition.pbism` and every `definition/**.tmdl` of the PBIP. Report: the PBIP's `definition/**` and
+  `StaticResources/**` plus the PUBLISHED report's own `definition.pbir` from `getDefinition` (its `byConnection`
+  binds the report to the model; the local one binds by path). 22 s each, then a refresh (tables come back
+  unprocessed). Keep both `getDefinition` results first: they are the rollback (`updateDefinition` with them).
+- **RLS role members survived `updateDefinition`** (they are not part of the definition). Impersonated
+  `executeQueries` before and after: the non-workspace role members answered as themselves both times, a stranger got
+  401 `RLSNotAuthorizedForModel`. Check people who are role members and NOT workspace members (a workspace member is
+  not impersonated; the answer is the caller's).
+- **A helper that prints and returns makes a comparison vacuous.** `$before = Check-Readers` captured the printed line
+  and the dictionary as an array; `$before[$key]` then indexed the array, returned nothing, and "nobody lost access"
+  passed. Write the line to the host, return only the result, and assert its type before comparing.
+- **Do the design pass on SERVICE screenshots, not Desktop's.** The service drew 9 pt Arial wider than Desktop: a
+  10-digit number needed 78 px, a dd/mm/yyyy date 76, "+122%" 52, "Seg." 38 (the full stop wrapped at 34), bold 9 pt
+  headers of 8 and 11 characters 66 and 92 (they broke inside the word at 60 and 80). Keep each width in the
+  generator with the screenshot that set it.
+- **Service screenshots over CDP.** `Emulation.setDeviceMetricsOverride` ends with its DevTools session (a helper that
+  opens one WebSocket per call loses it at once). `Target.createTarget {newWindow: true}` gives a window of its own,
+  so a shared window is never resized (its `width`/`height` were ignored in headful Chrome). `Page.captureScreenshot`
+  with `clip` = the `.displayArea` rectangle and `scale: 2` gives a crisp image of the canvas alone.
+- **Matrix formatting names, measured.** The total line's colours are `rowTotal` (`total.backColor`, which colours a
+  table's total line, did nothing on a matrix). With column subtotals on, a green `rowTotal` stops before the grand
+  total cell of the Total column: leave such a matrix's total plain. `columnHeaders.titleAlignment` places the row
+  headers' own header ("Region", "Status then"); `columnHeaders.alignment = 'Auto'` put text headers on the left over
+  centred values, so keep 'Center' with centred values.
+- **A table that never scrolls fills its visual; one that scrolls keeps a lane.** Widths summing to width - 4 drew no
+  scroll bar on a fixed five-row table; the old blanket 29 px reserve showed as a gap before the page's right edge. A
+  stepped matrix that scrolls once a row is opened needed a 14 px lane: with 8 px the vertical bar also brought a
+  horizontal one.
+- **Stepped matrix in the service.** The + is `.expandCollapseButton i[role=button][aria-label="Collapsed"]`; a script
+  `click()` did nothing, a pointerdown, mousedown, pointerup, mouseup, click sequence at its centre opened it. The
+  service keeps each viewer's opened rows and slicer picks: press "Reset to default" (and its confirm, "Reset") before
+  a screenshot that must show what a new viewer sees.
+- **The date picker slicer draws its day and its placeholder larger than the other inputs** whatever `date.textSize`
+  and `items.textSize` say; at 120 px the year was cut, 140 px fits.
+- **DirectQuery views are live the moment they deploy.** The published report (and its app) showed the renamed column
+  groups and the new timeline items of the changed SQL views before the new model was published. Change such views
+  additively (keep the old columns) so the published version keeps working until the publish.
