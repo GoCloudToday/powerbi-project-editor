@@ -4261,3 +4261,46 @@ current page button); the same script read the old screenshot first to calibrate
 - **DirectQuery views are live the moment they deploy.** The published report (and its app) showed the renamed column
   groups and the new timeline items of the changed SQL views before the new model was published. Change such views
   additively (keep the old columns) so the published version keeps working until the publish.
+
+#### 2026-10-30 round 17 (a date box that opens on the right month; slicers driven in the service; a rolled-back rehearsal)
+
+- **The "Date Picker" slicer style opens its calendar on the column's LAST day.** A one-day picker (`data.mode
+  'RelativeDatePicker'`, `selection.singleDate`) on a date table that ran to a fixed end years out opened on that end
+  month; users reported it as a bug. The `After` style (`data.mode 'After'`, `slider.show false`) opens on its start
+  day, the column's first day (its calendar button reads "Start date, calendar button, selected: <first day>"). Its
+  pick still reaches a measure as `IF(ISFILTERED(T[Date]), MIN(T[Date]))` (the filter is Date >= the pick): tested in
+  the service, a picked 16th turned the save button's text to that day.
+- **A small range slicer folds into a funnel icon.** The After style drew only a funnel at 140 x 44 with a title and at
+  140 x 28 without one (`general.responsive` is on by default); `general.responsive = false` drew the box. The style
+  also draws a second, greyed box (the column's last day) right of the first; each box has a fixed width (about 105 css
+  px with its button at 100% zoom), so a visual that ends between them (116 px) shows the first alone. The box sits
+  about 6 px below the visual's top and is about 29 px high at 10 pt: give it 36 px and put the title in a text visual
+  of its own above. `date.background` fills the box (white, like the dropdown boxes).
+- **Category axis labels turned 45 degrees and the axis card could not stop it.** Four bars with labels of 4 to 10
+  characters in a column chart about 205 px wide turned at 9 pt and at 8 pt; `categoryAxis.outerPadding = 0` (with no
+  left padding) only made every word whole; `innerPadding = 10` cut the longest word with an ellipsis. Measured levers
+  left: shorter labels or fewer bars.
+- **Correction to round 16: a new window has the small size Chrome gives it.** The canvas rendered at 59% zoom, and
+  `Browser.setWindowBounds` on that window did not change it. Holding ONE WebSocket for the whole run, with
+  `Emulation.setDeviceMetricsOverride {width 1600, height 960, deviceScaleFactor 1}` sent first, gave a 103% canvas;
+  navigate, evaluate and capture over that same socket.
+- **Driving slicers in the service.** A button slicer tile (`[role=button].buttonSlicerVisual`) ignored a script
+  `click()` and dispatched pointer and mouse events; a DevTools `Input.dispatchMouseEvent` (mouseMoved, mousePressed,
+  mouseReleased) at its centre selected it. A matrix cell (`.pivotTableCellNoWrap`) selected its line with the
+  dispatched pointer sequence. The calendar overlay is fixed-positioned (`offsetParent` is null: test visibility by the
+  rect), its days are `button.date-cell`; an `innerText` search over it found nothing where `textContent` did. Matrix
+  rows scrolled out of view still have real rects inside the page: anchor clicks on the target visual's own selectors,
+  never on text plus a y range (one such click selected a hidden row instead of the button).
+- **A from-to status matrix that counts every account reads unchanged accounts as moves.** Its diagonal (A then, A
+  now) held every unchanged account. Count only accounts whose status changed (or that were added), so the diagonal
+  stays empty, and put "none" in the title when nothing moved.
+- **An app shows its last published report against the workspace's LIVE model.** A model publish that changes a
+  measure the app's report reads changes what app users see before the app update. Add new measures for a new design
+  (for example a share with its words) and leave the old ones until the next cleanup.
+- **Rehearse a destructive SQL procedure inside a transaction that is rolled back.** `SET XACT_ABORT ON; BEGIN TRAN;
+  EXEC proc @Apply = 1; <checks>; ROLLBACK;`: nested `BEGIN/COMMIT` pairs inside the procedure only decrement
+  `@@TRANCOUNT`, so the outer rollback undid the backup `SELECT INTO` tables, the deletes and the load. Fingerprints
+  (`COUNT(*)` with `CHECKSUM_AGG(BINARY_CHECKSUM(*))` per table) were identical after; with READ_COMMITTED_SNAPSHOT
+  on, DirectQuery readers were not blocked meanwhile.
+- **`BACKUP` is a reserved word in T-SQL**: `CREATE SCHEMA backup` failed with "Incorrect syntax near the keyword
+  'backup'". Name the schema `archive` (or bracket it).
