@@ -4304,3 +4304,36 @@ current page button); the same script read the old screenshot first to calibrate
   on, DirectQuery readers were not blocked meanwhile.
 - **`BACKUP` is a reserved word in T-SQL**: `CREATE SCHEMA backup` failed with "Incorrect syntax near the keyword
   'backup'". Name the schema `archive` (or bracket it).
+
+#### 2026-11-07 round 18 (an inventory of the report elements left without data after source columns went missing)
+
+- **A static closure over-reports by an order of magnitude when measures branch on a selector table.** 18 source
+  columns were missing, so 52 model objects held placeholders, and the DAX closure added 116 measures that read one of
+  them in at least one branch. 1,646 references on 202 of 805 visuals hit that closure. The real loss was much smaller:
+  2 options of one selector slicer (offered on 10 slicers), 4 of 18 KPIs, 3 table rows and 5 filter cards. The
+  "selected" measures SWITCH on a disconnected selector table, and only two of its nine options read the missing
+  columns. Method that separated the two: evaluate every affected measure the reports use as a grid over the selector
+  tables it branches on, `SUMMARIZECOLUMNS(Sel[Option], Sub[Option], KPI[Name], FILTER(ALL(Calendar[Month]), ...),
+  "v", [m])`, for one month on the rebuilt model AND on the original. Classify every cell: original non-zero and rebuilt
+  blank or 0 = missing here; rebuilt non-zero = ok; both empty = never shown. 61 measures, 2,790 cells, one query per
+  measure and model, none failed.
+- **Judge a KPI by its VALUE measure, not by every measure that carries the KPI dimension.** Display and detail-flag
+  measures written for one KPI (named after its id) still return rows for every KPI name in the grid. A union over all
+  KPI measures marked healthy KPIs as missing at three more levels; the value measure alone showed 14 KPIs that lose
+  only the two dead options, 1 that keeps one level, and 4 lost at every level.
+- **SUMMARIZECOLUMNS output columns from two tables can share a name.** `KPI[Name]` and `Sel[Name]` both end in
+  `[Name]`; keying the row by the stripped name silently overwrote the KPI with the selector value. Read result rows by
+  position.
+- **Blank or 0 decides what the front end must hide.** Blank rows drop out of a table visual by themselves; 0 rows stay.
+  The base quantity measures returned 0 at the dead options (hide the options), most KPI measures returned blank
+  (their table rows self-hide, cards and matrices still show empty cells).
+- **Check that the published report equals the local PBIR before trusting a scan of local files.** Fabric
+  `reports/{id}/getDefinition` parts against the local folders: a raw text compare flagged every part (byte-order mark,
+  line endings). A canonical JSON compare written with `ConvertTo-Json -Depth 200` threw (the maximum is 100) inside a
+  try, and its catch fell back to raw text without saying so. Fixed: depth 100, keys sorted recursively, BOM stripped,
+  any fallback marked `UNPARSED:`. Calibrated three ways (two different visuals differ, one changed value differs, the
+  same content reordered and with a BOM is equal), then 886 of 886 parts were equal.
+- **PowerShell harness traps met in the same run.** `-like '?|*'` treats `?` as a wildcard, so a diagnostic reported
+  every resolved reference as unresolved (use `.StartsWith()`). `Split-Path (Split-Path $f) -Leaf` applies `-Leaf` to
+  the outer call and lands one level short (use `$file.Directory.Parent.Name`). A visual-group `visual.json` has no
+  `visual` node; guard before indexing it.
