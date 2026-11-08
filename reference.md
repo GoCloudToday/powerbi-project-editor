@@ -4337,3 +4337,25 @@ current page button); the same script read the old screenshot first to calibrate
   every resolved reference as unresolved (use `.StartsWith()`). `Split-Path (Split-Path $f) -Leaf` applies `-Leaf` to
   the outer call and lands one level short (use `$file.Directory.Parent.Name`). A visual-group `visual.json` has no
   `visual` node; guard before indexing it.
+
+#### 2026-11-08 round 19 (pruning the elements without data: a switch the report already had, a structured edit, a render check)
+
+- **Look for a switch the report already has before editing slicers one by one.** The two dead levels of a selector slicer
+  were already gated by the original authors: a two-row TRUE/FALSE switch table, a hidden report-level filter on it (set to
+  true), and a visibility measure (1 when the switch is true, else 0 for those two levels) used as a visual filter on the
+  selector slicers and on the charts, maps and tables that depend on them. A sub-switch slicer for one of the levels was
+  filtered by a second measure that is 1 only while that level is picked. Flipping the one hidden report filter literal
+  from true to false removed the two options from 10 slicers in three reports. The sub-switches disappeared with them,
+  and no visual changed. Find such switches by grepping the report for measure filters (`"Comparison"` on a measure)
+  and the model for `SELECTEDVALUE(<switch>[Selector])`.
+- **A hidden, locked report-level `Not In` filter that already excluded one technical KPI row** was the place to drop
+  KPIs report-wide (matrix, cards, filter-pane lists) without touching visuals.
+- **Structured PBIR edit, minimal diff.** PowerShell 7.3+ `ConvertFrom-Json -AsHashtable` keeps key order, so the changed
+  files were rewritten from the parsed object (`ConvertTo-Json -Depth 100`, UTF-8 without BOM) and every other file stayed
+  byte-identical. The gate diffs SHA-256 hashes against a copy taken before the edit and states the expected set: 7
+  changed, the deleted pages' 44 files gone, 0 unexpected, 0 added. It also checks that no entity reference became
+  unresolved (6,260 scanned) and that no file still names a deleted page. Calibrated first: on the unchanged copy it
+  failed all 15 change checks and passed the 3 invariants.
+- **Render check without a browser:** the export API (`reports/{id}/ExportTo`, format PNG, `pages`) drew the selector
+  slicers as they look to a viewer. A page whose visuals need a selection (a client) rendered its selector empty until
+  `reportLevelFilters: [{filter: "Table/Column_x0020_Name eq 'value'"}]` was added.
