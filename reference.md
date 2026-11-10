@@ -4359,3 +4359,47 @@ current page button); the same script read the old screenshot first to calibrate
 - **Render check without a browser:** the export API (`reports/{id}/ExportTo`, format PNG, `pages`) drew the selector
   slicers as they look to a viewer. A page whose visuals need a selection (a client) rendered its selector empty until
   `reportLevelFilters: [{filter: "Table/Column_x0020_Name eq 'value'"}]` was added.
+
+#### 2026-11-10 round 20 (promoting a generated project to production; a reader scheduled after its source; a purge that leaked)
+
+- **Promote a generated project by generating it again, then prove it against a source build.** The generators read the
+  item ids (database server and name, functions item, workspace) from one environment file, so the production copy was
+  generated into its own root with the production file: the `.pbip`, fresh `logicalId`s in both `.platform` files, and
+  nothing of the Desktop-saved source folder (its `.pbi` settings pin the source item ids; its culture file is Desktop's
+  own). Proof: a build of the SOURCE environment from the same generators in scratch, compared file by file (JSON
+  parsed, keys sorted): 169 of 186 files identical, 17 differing only by the environment values (the two database
+  parameters and 16 data function buttons). Generators that find the environment file and theme resources relative to
+  their root need that layout copied into scratch; resolve an 8.3 short temp path with `Get-Item` before slicing
+  relative paths, or every file reads as missing.
+- **Environment gate with a leak sweep.** Read the truth from the target workspace (the database's `serverFqdn` and
+  `databaseName`, the functions item, the published functions' connected data source) and check the model's parameters,
+  that every partition reads through them, every button's `itemId` and `workspaceId`, every server name written
+  anywhere, and every GUID in the project: structural (`lineageTag`, relationship name, `logicalId`) or the target
+  workspace or an item IN the target workspace. Calibrated four ways: source project against the target fails (71
+  problems), source against source passes, target against source fails, an empty folder is UNVERIFIED.
+- **A TMSL refresh on Desktop's engine waits behind Desktop's credential dialog.** On a database Desktop had never seen,
+  `Invoke-ASCmd` neither failed nor timed out: it returned success after 1,727 s, once the owner had signed in. Look for
+  a visible dialog of that Desktop's process whose UIA texts include "Please specify how to connect." and the
+  `server;database`. The sign-in is the owner's; never fill it.
+- **The first publish of a new report lands at the workspace root** when the dialog is driven by the workspace's list
+  item; `POST /v1/workspaces/{ws}/items/{id}/move` `{"targetFolderId": ...}` moved the report and the model, and the
+  report kept its binding (`byConnection` with `semanticmodelid`). A new model has no credential for a new database:
+  the import half arrives with Desktop's data, the DirectQuery half fails (`DatasetExecuteQueriesError`) until the
+  owner signs in under the model's data source credentials.
+- **Fabric SQL database: catalog names and the database collation clash.** `sys.*` name columns carry
+  `Latin1_General_CI_AS_KS_WS`, the database default was `SQL_Latin1_General_CP1_CI_AS`, so `CONCAT(ty.name, ...)` and
+  `s.name + '.' + t.name` failed "Cannot resolve collation conflict ... in concat operator / in add operator". Put
+  `COLLATE DATABASE_DEFAULT` on every catalog string. A schema comparison of two databases built from the same scripts
+  (columns with type, nullability and default, check constraints, indexes, foreign keys, module text; column order
+  ignored, since a table that grew by ALTER keeps new columns at the end) gave 0 differences.
+- **"Hourly" against a source that refreshes six times a day.** The source's `refreshSchedule` and refresh history
+  (16 to 21 minutes per refresh) set the reader's times: half an hour after each refresh starts gives the freshness of
+  an hourly reader with a quarter of the runs. A Power Automate `Recurrence` schedule is hours times minutes (hours
+  `[8, 9]` with minutes `[0, 30]` runs four times), so one schedule takes one minute value for all its hours.
+- **A retention purge must follow every table keyed by the run.** The purge removed answers and run rows after two weeks
+  but never the load rows built from them, a slow leak that more runs a day would multiply. Count and age together
+  (the newest 20 runs, none older than two weeks) and sweep rows whose run is gone.
+- **Calibrate a procedure test by swapping in the old body inside the test's own transaction.** `CREATE OR ALTER
+  PROCEDURE` is transactional: the test plants small runs and an orphan row, calls the procedure, checks what stays and
+  rolls back. With the old body swapped in first, 17 of 20 checks failed; after the rollback `OBJECT_DEFINITION` showed
+  the new body again.
