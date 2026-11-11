@@ -4403,3 +4403,28 @@ current page button); the same script read the old screenshot first to calibrate
   PROCEDURE` is transactional: the test plants small runs and an orphan row, calls the procedure, checks what stays and
   rolls back. With the old body swapped in first, 17 of 20 checks failed; after the rollback `OBJECT_DEFINITION` showed
   the new body again.
+
+#### 2026-11-11 round 21 (the security table secured too; group membership as the gate and rows as the grant; an access list loaded by a flow)
+
+- **Put a row filter on the dynamic-security table itself.** The role filtered every fact table through the access
+  table but not the access table, so any role member who could query the model (Build permission, Analyze in Excel)
+  could read the whole list: names, emails and what each person plans. A filter `'<access table>'[UPN] =
+  LOWER(USERPRINCIPALNAME())` changed nothing else, because every role filter and measure already read only the
+  signed-in user's rows (`REMOVEFILTERS` does not lift a row filter, and the user's own rows are all they need).
+  Check per person with `executeQueries` impersonation: `COUNTROWS(ALLNOBLANKROW('<access table>'))` must equal their
+  own row count; skip the caller and other workspace members, who have no row filter. Calibrated on the model before
+  the change: every role member was flagged for reading all rows.
+- **Group membership as the gate, rows as the grant.** With broad groups in the role, impersonate random group members
+  who have no rows: every fact table must return 0 rows (only figure-free lists such as verticals, regions and
+  currency rates remain). Role members set in the service survived a Desktop publish with Replace. Impersonation
+  answered for a disabled account too (it showed what that account's rows give).
+- **An access list loaded by the flow from Excel.** The same Office Script that returns a workbook's first sheet as rows
+  of cells (header first) read the access sheet, and a SQL procedure took over the loader's rules: columns found by
+  their header, levels mapped, names matched to the report's exact names. It refuses the whole load on any row with a
+  problem, on a list without an administrator row, on an empty sheet and on a load that would remove more than half of
+  the rows (nothing changes, the run fails, the owner gets the mail), and logs every load that changed something. What
+  the flow cannot do is search the directory: rows without an email are skipped, and the rows of someone who left load
+  harmlessly (that account cannot sign in). The gate runs the sheet through the procedure in dry run mode against the
+  loader's result, eight refusals on purpose, and a real load rolled back. A `-WhatIf` mode on the flow builder proved
+  the other environment's definition unchanged after the builder gained the new step. Daily script runs that only read
+  a workbook created no new SharePoint versions (its version list stayed the same).
