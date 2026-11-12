@@ -4428,3 +4428,42 @@ current page button); the same script read the old screenshot first to calibrate
   loader's result, eight refusals on purpose, and a real load rolled back. A `-WhatIf` mode on the flow builder proved
   the other environment's definition unchanged after the builder gained the new step. Daily script runs that only read
   a workbook created no new SharePoint versions (its version list stayed the same).
+
+#### 2026-11-12 round 22 (a page rebuilt from another team's chart: series colour, a constant line from a measure, header totals under a visual filter, rounding)
+
+- **A one-measure column chart takes its colour only from a `dataPoint` entry WITHOUT a selector.** A hand-written
+  `dataPoint` `fill` with `selector: {metadata: "<Table>.<Measure>"}` (the projection's own queryRef, the shape that
+  works per series on multi-measure charts) was ignored silently on a clustered column chart with one Y measure: the
+  pixels of a Desktop screenshot were the theme's first data colour, not the literal. The same `fill` without the
+  selector applied on the next open (pixels equal to the literal). Check colours by sampling pixels, never by reading
+  the JSON.
+- **A constant line bound to a measure renders.** `objects.y1AxisReferenceLine` with `value: {expr: {Measure: ...}}`,
+  `show`, `displayName` (a `'text'` literal), `lineColor` (fill), `style` `'dashed'`, `width` and `transparency` (`D`
+  literals), `position` `'front'`, `dataLabelShow` false and `selector: {id: "1"}` drew the line at the measure's value
+  in Desktop and in a service export. Title and subtitle bound to measures (`visualContainerObjects.title` and
+  `subTitle`, `text: {expr: {Measure: ...}}`, `titleWrap` true) render too. Property names and enums: the theme
+  schema's `y1AxisReferenceLine`, `title` and `subTitle` cards.
+- **A visual-level filter also filters the visual's title and subtitle measures.** A "category is not blank" filter
+  (to hide the blank-member bar of rows without a dimension key) took those rows out of the header totals as well: the
+  header count fell by 3 rows against the model total. Fix that leaves the totals alone: no filter, and the bar measure
+  blanked for the blank member only, `IF(ISINSCOPE(Dim[Name]) && ISBLANK(SELECTEDVALUE(Dim[Name])), BLANK(), <value>)`.
+  Tooltip fields do not keep a category on the axis: a tooltip measure written `COUNTROWS(...) + 0` returned 0 for
+  every member without data and the chart still showed only the members with a Y value.
+- **"Round each share, then subtract" is not the standard percentage difference.** A KPI written
+  `ROUND(a% * 100, 0) - ROUND(b% * 100, 0)` was 1 point off a reference report on 5 of 41 categories;
+  `ROUND(DIVIDE((a - b) * 100, n), 0)` over the counts matched 3 of them (one division keeps an exact half exact: 8/64
+  gives 12.5). The other 2 were exact halves the reference showed rounded DOWN to the even number, the sign of banker's
+  rounding (the default `round()` of some languages), not of different data. The change moves the KPI on other pages
+  too (1 point on roughly 5 to 30 % of the cells of each breakdown here), and a table that shows the two shares
+  rounded separately beside the KPI no longer subtracts to it exactly: tell the owner both before switching.
+- **Headless screenshot of one page:** set `pages.json` `activePageName` to it, open the project, capture, kill
+  Desktop, restore `activePageName`. A hash classification against the pre-edit backup afterwards (identical,
+  modified, added) proved Desktop wrote nothing to the project. The Store build of Desktop keeps its engine folders
+  under `%USERPROFILE%\Microsoft\Power BI Desktop Store App\AnalysisServicesWorkspaces`, not `%LOCALAPPDATA%`;
+  `Start-Process` on the `.pbip` opens it.
+- **Service render check of one page:** `POST .../reports/{id}/ExportTo` with `{format: "PNG",
+  powerBIReportConfiguration: {pages: [{pageName: "<page>"}]}}`, poll `exports/{exportId}`, then download
+  `exports/{exportId}/file`: one PNG of that page with service data in about 30 s (capacity workspace).
+- **An app's copy of a report:** `GET /v1.0/myorg/reports/{appReportId}/pages` lists its pages (the
+  `apps/{appId}/reports/{id}/pages` path answers "No HTTP resource was found"). Compare it with the workspace
+  report's pages to prove an app update carried a new page.
