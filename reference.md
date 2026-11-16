@@ -4467,3 +4467,32 @@ current page button); the same script read the old screenshot first to calibrate
 - **An app's copy of a report:** `GET /v1.0/myorg/reports/{appReportId}/pages` lists its pages (the
   `apps/{appId}/reports/{id}/pages` path answers "No HTTP resource was found"). Compare it with the workspace
   report's pages to prove an app update carried a new page.
+
+#### 2026-11-13 to 11-16 round 23 (a date culture that silently swapped day and month; one page hidden in one environment only; a source file that lost a column)
+
+- **A date column typed with the wrong culture fails nothing and corrupts everything after it.** A CSV query used
+  `Table.TransformColumnTypes(..., "en-GB")` while the export wrote US dates (`9/22/2026 12:35:10 PM`): of 1,067 rows,
+  642 came out blank (day above 12) and 410 with day and month swapped; only 15 were right. Refreshes stayed green.
+  The signs: blank dates, events dated before the event that caused them (a response before its invitation: 303),
+  dates in the future (17), and a date table built from MIN/MAX of the column spanning the wrong months. A calculated
+  column that picked each entity's latest quarter from the date (a "detractor in the latest quarter" flag) was
+  quietly wrong, and the KPI on top of it was several times too small. Proof before the fix: re-parse the raw file in
+  PowerShell with both cultures (`[datetime]::TryParse(raw, culture)`) and emulate the calculated column: the
+  emulation reproduced the model's blank count and flagged-entity count EXACTLY, and with the true dates predicted
+  the post-fix figures to the row. Fix: the one culture argument, then a full refresh. An older copy of the same
+  export, re-saved by Excel in a day-month locale, explains how such a culture gets chosen in the first place.
+- **Hide a page in one environment only:** keep it visible in the project and send `page.json` with
+  `"visibility": "HiddenInViewMode"` in the report parts at publish time (`updateDefinition`). Record it, because
+  every later publish to that environment must apply the same override or the page reappears. Someone else's
+  "Update app" afterwards copied the report into the app WITH the hidden page; app viewers still do not see it, and the
+  pages API lists it (hidden pages are listed too, for the workspace report and the app copy).
+- **A source file that lost a column fails the refresh by name:** `Expression.Error: The column '<name>' of the table
+  wasn't found` from the typing step. A failed refresh keeps the previous data in place, so viewers saw the last good
+  load. Recreating the file in the library (instead of overwriting it) restarted its version history at 1.0, so the
+  broken upload could no longer be inspected: compare the new file's header with a saved copy of the previous one
+  (names and positions) before trusting a repaired upload.
+- **Timestamp trap in a PowerShell harness:** `Invoke-RestMethod` turns ISO `...Z` strings into UTC `DateTime` values;
+  `[DateTimeOffset]::Parse([string]$dt)` then reads the culture-formatted string as LOCAL time and shifts it by the
+  offset: refresh failures were reported an hour early. Read the raw JSON (`Invoke-WebRequest` + the string), or use
+  the value as it is. A consistency check exposed it: the first refresh of the day came out an hour before the
+  schedule's first slot.
