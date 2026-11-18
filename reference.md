@@ -4496,3 +4496,37 @@ current page button); the same script read the old screenshot first to calibrate
   offset: refresh failures were reported an hour early. Read the raw JSON (`Invoke-WebRequest` + the string), or use
   the value as it is. A consistency check exposed it: the first refresh of the day came out an hour before the
   schedule's first slot.
+
+#### 2026-11-18 round 24 (a new filter dimension over DirectQuery facts; an input without the filter's grain; sort-by names that must stay unique; stale culture terms; a Windows PowerShell Count trap)
+
+- **"Everything selected" on a dual dimension that a hidden report filter keeps filtered.** The report drops each dual
+  dimension's blank member with a hidden "is not blank" report filter (round of 2026-09-26), so `ISFILTERED(dim[col])`
+  is TRUE on every visual and can't tell "nothing picked". Compare rows instead:
+  `ISEMPTY(EXCEPT(ALLNOBLANKROW(dim[key]), VALUES(dim[key])))` is TRUE while the selection holds every real row
+  (nothing picked, or all of it) and ignores the blank member either way. Under RLS on the dimension both sides see
+  the same rows, so it still holds.
+- **An input without the filter's grain can't follow the filter.** A planner amount per country and category (no
+  segment, no account) can't be split when a new segment or account filter narrows the page: count it in the totals
+  only while those filters show everything (the test above), and compute the column next to it ("already in the
+  pipeline") from the facts that do carry the grain: `CALCULATE(<fact sums>, TREATAS(VALUES(Input[Category]),
+  Categories[Category]))`. TREATAS because the input table is on the many side of the category dimension, so a filter
+  on the input table's own column never reaches the facts. Probe: the per-segment rows add up to the unfiltered card
+  to the unit, and with one segment picked the input amount leaves the total.
+- **A sort-by column needs one sort value per display value, or the refresh fails.** A display name built as "name,
+  plus the category where the name spans categories" can still collide (two codes with one name and one category).
+  Make the names unique in the view (`COUNT(*) OVER (PARTITION BY name) > 1` then append a `ROW_NUMBER`) and gate it:
+  `SELECT COUNT(*) - COUNT(DISTINCT name)` must be 0.
+- **Stale linguistic metadata is tolerated, but prune it when tables go.** A Desktop-written culture file kept Q&A
+  entities bound to removed tables and renamed measures for weeks without a load error (Desktop, the service and the
+  TOM TmdlSerializer all accepted it). Pruning that changes nothing else: take the JSON block after
+  `linguisticMetadata =` (indented three tabs, ending before `contentType: json`), drop every entity whose
+  `Definition.Binding.ConceptualEntity` / `ConceptualProperty` is not in `tables/*.tmdl`, serialize with two-space
+  indent, re-indent, and keep the file's own line endings; then prove every kept entity is equal (compressed JSON) to
+  the original. 50 of 133 entities went; TOM and Desktop loaded the result.
+- **Windows PowerShell 5.1: a single `[pscustomobject]` has no `.Count`** (PowerShell 7 adds it to every object). A
+  DMV helper that returns its rows unrolls a one-row result into that object, so `if ($rows.Count -gt 0)` is never true:
+  an "engine ready" wait timed out for 5 minutes with the engine up and its one catalog listed. Run such tools with
+  `pwsh`, or wrap the call in `@(...)`.
+- **Replacing a model from Desktop keeps its RLS role members** (same role name): after the Replace the members that
+  were in the role still saw their rows. The people who saw nothing had come in through groups that had been emptied in
+  the directory days before; check group contents before blaming a publish.
