@@ -88,6 +88,7 @@ keep/kill graph, gate, deleters, fingerprint suite) is worth carrying per repo u
 |---|---|
 | Removing a table | Also: its relationship blocks, `ref table` line in model.tmdl, `PBI_QueryOrder` entry, role/culture entries. Verify not a bridge / M-consumed first. |
 | "Nothing picked" on a slicer dimension that a hidden not-blank filter keeps filtered | `ISFILTERED` is always true there: test `ISEMPTY(EXCEPT(ALLNOBLANKROW(dim[key]), VALUES(dim[key])))`. An input with no grain on that dimension counts only while it holds; sort-by names must stay unique. reference.md §2026-11-18 round 24. |
+| RLS that must follow another model's user-to-country table | Copy the table on every load (executeQueries as a workspace member), keep it as a hidden dual table filtered to the user's own rows, OR it into every country filter (GLOBAL row = all, plus the source's sub-domain rule); it opens rows to read only, the write list stays apart. Service "View as" banner "This user does not have access to the dataset or report." = item permission, not RLS. reference.md §2026-11-20 round 25. |
 | Relationship endpoints | Dot notation `'Table'.Column` (either side quotable). NOT `Table[Column]`. Root endpoints iteratively — only while BOTH tables are kept. |
 | Calc-table columns (`isNameInferred`, `sourceColumn: [X]`) | Block deletion is meaningless — the DAX source recreates them. Remove via source surgery or keep. |
 | Kept table, all columns dead | Keep ≥1 column; zero-column tables are degenerate (COUNTROWS errors). |

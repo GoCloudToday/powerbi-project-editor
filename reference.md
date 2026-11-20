@@ -4530,3 +4530,33 @@ current page button); the same script read the old screenshot first to calibrate
 - **Replacing a model from Desktop keeps its RLS role members** (same role name): after the Replace the members that
   were in the role still saw their rows. The people who saw nothing had come in through groups that had been emptied in
   the directory days before; check group contents before blaming a publish.
+
+#### 2026-11-20 round 25 (row-level security that follows another model's user-to-country table; what the service's "View as" banner means; a role read that waits on a sign-in window)
+
+- **RLS aligned with another model's country profile, without touching that model.** The other model filtered its
+  countries by a user-to-country table (one row per person and country, a GLOBAL row for everything) plus a rule that
+  takes the country from a sub-domain e-mail. The copy: the daily load asks that published model for the table through
+  executeQueries (the loader's account is a workspace member, so that model's RLS doesn't filter the answer), keeps it
+  in its own SQL table (replaced in one transaction after the main merge, so it can't fail the load; an answer under a
+  floor, without a GLOBAL row or under half of today's rows is not applied, only logged, so a broken source never
+  empties access), and the model imports it as a hidden DUAL table (the RLS of dual dimensions reads it) with its own
+  row filter `[UserPrincipalName] = LOWER(USERPRINCIPALNAME())`. Every country filter of the role becomes
+  `SeesAll || key IN MyListKeys || key IN ProfileKeys || key = DomainCountry`, with `"GLOBAL" IN ProfileKeys` inside
+  SeesAll, and the sub-domain rule copied in DAX from the other model's own SEARCH/MID text. Keep the write list apart:
+  the profile opens countries to READ only. Slicer helper measures that listed only "my list's countries" need the
+  profile too, or a profile-only user's slicer misses countries that RLS lets through. Take the union, not a
+  replacement, when planners write countries outside their profile (a strict copy would hide the countries they must
+  fill in). Gates: a static check that every country filter carries both profile terms (calibrated by stripping them
+  from one filter) and an impersonation check that adds the profile and the sub-domain country to each person's
+  expected countries.
+- **The service's "View as <person>" banner "This user does not have access to the dataset or report." is about item
+  permission, not RLS.** The page still renders, because "View as" runs the queries with the tester's permissions and
+  only applies the person's identity to the row filters; the banner says the person couldn't open the report today (no
+  workspace role, not in an app audience, no share). The figures shown are what RLS gives them (impersonation through
+  executeQueries gave the same). It goes away once the report is in an app audience that holds them (app users get read
+  on the report and its model).
+- **Reading role members over XMLA can stop on an interactive sign-in window.** A TOM `Server.Connect` with only
+  `User ID=` in the connection string sat on a visible "Sign in to your account" window for minutes (found by listing
+  the visible windows of the process). Kill it when nobody is there to sign in, and tell membership by effect instead:
+  executeQueries with impersonatedUserName refuses a person in no role (RLSNotAuthorizedForModel) and answers a role
+  member. A person who is in several groups of the role can't prove which group lets them in.
