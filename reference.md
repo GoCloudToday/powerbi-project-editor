@@ -1964,9 +1964,9 @@ live Desktop engine (partition refreshed six weeks earlier) and the published da
 because a uniqueness violation on the one-side column ROLLS BACK the whole refresh: the offending rows never land
 anywhere you can EVALUATE. The evidence exists only in the current source file.
 
-- **Headless source fetch.** The file lived in a SharePoint document library. Direct SharePoint REST
-  (`_api/web/GetFileByServerRelativeUrl(...)/$value` with an Azure PowerShell token for the SharePoint host) returned
-  **401** — that first-party app has no SharePoint scope. Graph with the same cached Az context worked first try:
+- **Headless source fetch.** The file lived in a Microsoft 365 document library. The library's own REST API
+  (`_api/web/GetFileByServerRelativeUrl(...)/$value` with an Azure PowerShell token for the library host) returned
+  **401** — that first-party app has no scope for the library host. Graph with the same cached Az context worked first try:
   `GET /v1.0/sites/{host}:/{sitePath}` → `/sites/{id}/drives` (library "Documents") → `/drives/{id}/root:/{folder}/{file}`
   → `/items/{id}/content` (4.8 MB in seconds, no prompt). Keep the token in-process; never write it to disk.
 - **Reproduce the M parse faithfully.** `Csv.Document(..., Columns=44, QuoteStyle=QuoteStyle.None)` STILL treats
@@ -2611,7 +2611,7 @@ quantified).
 public client (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`) and scope
 `https://analysis.windows.net/powerbi/api/.default` → Power BI REST works: Gen1 `model.json` per
 dataflow, `/transactions` refresh history, one code, about three minutes including the operator. The
-SAME client with the tenant's SharePoint `.default` scope signs in, but SharePoint REST answers
+SAME client with the library host's `.default` scope signs in, but the library's REST API answers
 `401 {"error":"invalid_request"}` to `_api/web/GetFolderByServerRelativePath(...)` — twice, once via a
 refresh-token exchange from the Power BI sign-in and once via a direct sign-in. Tenant files are read
 through Microsoft Graph instead (`/sites/{host}:/sites/{site}` → drive → `/root:/{path}:/children` →
@@ -2785,7 +2785,7 @@ passed each time, so these are rules the audit must carry, not things Desktop wi
    Never reuse a script-level name differing only by case; name loop variables distinctly.
 8. **Rebuilding while Desktop has the folder open** works on disk (PBIR files are not locked) but the
    open instance is stale and a save from it overwrites the build — tell the operator "close without
-   saving, reopen" before every rebuild. A synced (OneDrive/SharePoint) folder can also hold the
+   saving, reopen" before every rebuild. A synced (OneDrive or document library) folder can also hold the
    `definition` directory for ~20 s after a write ("being used by another process"); retry rather
    than debug.
 9. **`&&` in DAX does not short-circuit for error avoidance:** `r <> 0 && ABS(q/r - ROUND(q/r,0)) < eps`
@@ -3281,7 +3281,7 @@ headless open / refresh / probe / screenshot cycles after the machine restarted 
   "gateway throttling". Parallelism only correlated (more full-size segments in flight;
   `sequence.maxParallelism: 1` changed nothing). Diagnosis, 30 seconds: `ping 1.1.1.1 -f -l 1472` then 1400,
   1350, 1300 - timeouts at the top of the ladder with replies below it, and no "needs to be fragmented" answer,
-  is the black hole. Fix (elevated): `Set-NetIPInterface -InterfaceAlias "<nic>" -AddressFamily IPv4
+  is the black hole. Fix (admin shell): `Set-NetIPInterface -InterfaceAlias "<nic>" -AddressFamily IPv4
   -NlMtuBytes 1350` - parallel bursts went from 0/10-3/10 to 10/10, 10/10 immediately and Desktop's refresh
   worked again (netsh `set subinterface` answered "Element not found" for the same interface; the cmdlet
   worked; re-check the MTU after a reboot). Signature worth memorizing: TDS dies during pre-login/login TLS
@@ -4057,7 +4057,7 @@ current page button); the same script read the old screenshot first to calibrate
 #### 2026-10-27 round 10 (when Pipelines are blocked: a Power Automate flow loads the Excel lists)
 
 - **A scheduled Power Automate flow can stand in for a Fabric pipeline** that a tenant policy blocks. Shape that ran
-  end to end on the first try (8 steps, 41 s): Excel Online (Business) "Run script from SharePoint library"
+  end to end on the first try (8 steps, 41 s): Excel Online (Business), its document-library script action
   (`RunScriptProdV2`) runs an Office Script that returns the first sheet as a JSON string; SQL Server "Execute stored
   procedure (V2)" passes it to a procedure that `OPENJSON`s it into the raw positional stage (see round 9) and runs the
   merge; Power BI "Run a query against a dataset" (`ExecuteDatasetQuery`, output `firstTableRows`) reads another model
@@ -4427,7 +4427,7 @@ current page button); the same script read the old screenshot first to calibrate
   harmlessly (that account cannot sign in). The gate runs the sheet through the procedure in dry run mode against the
   loader's result, eight refusals on purpose, and a real load rolled back. A `-WhatIf` mode on the flow builder proved
   the other environment's definition unchanged after the builder gained the new step. Daily script runs that only read
-  a workbook created no new SharePoint versions (its version list stayed the same).
+  a workbook created no new file versions in the library (its version list stayed the same).
 
 #### 2026-11-12 round 22 (a page rebuilt from another team's chart: series colour, a constant line from a measure, header totals under a visual filter, rounding)
 
