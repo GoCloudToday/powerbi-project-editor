@@ -68,6 +68,11 @@ overrides as written, tell the user the core moved, and run the core update chec
   then fully quit the editor (every window: a window reload keeps the old main process and its
   PATH) and start it again. A plugin MCP server that failed to start is skipped for about 15
   minutes; once the cause is fixed, reconnect it from `/mcp`.
+- **The modeling server's license:** `powerbi-modeling-mcp` refuses every tool until its EULA
+  (https://go.microsoft.com/fwlink/?LinkId=2381247) is accepted. That is the user's step: the
+  user environment variable `PBI_MODELING_MCP_ACCEPT_EULA=true` (then fully quit the editor) or
+  the server's `accept_eula` tool on the user's own instruction, which an agent's permission
+  check may refuse. Do not edit `--accept-eula` into the cached plugin config: updates replace it.
 - **Sign-in:** where conditional access blocks the device-code flow,
   `az config set core.enable_broker_on_windows=false`, then
   `az login --tenant <tenant id> --allow-no-subscriptions` signs in through the browser.

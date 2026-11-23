@@ -4670,3 +4670,10 @@ command` (its log sits in the CLI cache folder under `mcp-logs-plugin-powerbi-au
 the server answered `initialize` as "Power BI Authoring MCP Server (Local)" 1.0.1. After a full quit and relaunch all
 four commands resolved, but the failed connection stayed cached: "Skipping connection (recent failure cached retries
 automatically in 15 min, or edit the plugin config to retry now)". Reconnect it from `/mcp` instead of waiting.
+
+Once connected (v2.3.0), every tool of the server answered "The Power BI Authoring MCP EULA must be accepted before
+using this tool. Review https://go.microsoft.com/fwlink/?LinkId=2381247, then call the accept_eula tool, pass
+--accept-eula (or --accepteula), or set PBI_MODELING_MCP_ACCEPT_EULA=true." The agent's call to `accept_eula`, made on
+the user's word, was refused by the agent's own permission check as an unwanted action. Accepting a license is the
+user's step; the user environment variable survives plugin updates, a `--accept-eula` edit in the cached plugin config
+would not.
