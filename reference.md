@@ -4581,3 +4581,25 @@ current page button); the same script read the old screenshot first to calibrate
 - **A measure that should draw 0, not a gap, in a trend line:** `SUMX(fact, fact[value] * fact[flag])` returns 0 for a
   series that has rows but no flagged row, and BLANK only where the series has no rows at all. A
   `CALCULATE(SUM(...), flag = 1)` returns BLANK and leaves that series without a line.
+
+#### 2026-11-23 round 27 (the render check after the gates: colours, cut titles, codes in a text column)
+
+- **The gates check bindings, not readability: render every page with the export API after each publish.** A generated
+  three-page report passed the TMDL gate and the binding gate and still had three faults that only the rendered PNGs
+  showed (`reports/{id}/ExportTo`, format PNG, one page per export).
+- **Series colours from a brand palette: compute the distances, don't eyeball them.** Two dark blues of the brand
+  palette, one per series, differed by 11.3 in OKLab (x100), below a normal-vision floor of 15. A dark green next to a
+  rust orange collapsed to 2.7 under a deuteranopia simulation (Machado 2009, severity 1.0). Scoring every ordered choice
+  of four from the brand colours (contrast 3:1 or more on white) left one family that passes all pairs: one dark blue, one
+  mid blue, the orange and the grey (15.4 normal, 9.8 colour-blind). Give each series a fixed colour through `dataPoint`
+  fills with a `scopeId` selector on the series column, so the colour follows the entity on every chart. Each chart
+  keeps its own legend.
+- **A visual title with `titleWrap` false is cut with an ellipsis.** Keep titles short. Put the explanation in the page
+  subtitle, or make the category labels plain enough that it is not needed.
+- **A text column copied from a job's log** (measure codes and numbers like `2.91121e+010`) is unreadable in a table.
+  Translate it in the source view: a list of (table, code, name, sort) rows, `STRING_SPLIT(text, ',', 1)` for the codes
+  with their ordinal, a join to the list, then `STRING_AGG(name, ', ') WITHIN GROUP (ORDER BY sort)` with each name once.
+  A code without a name shows as is, after the named ones, so a new measure is visible rather than lost. Make a gap
+  measure BLANK, not 0, where neither side has the value.
+- **PowerShell overload trap:** `[Math]::Max(0, $x)` and `[Math]::Min(1, $x)` with integer literals pick the Int32
+  overload and round a double to 0 or 1. A ported colour check then reported 0 for every pair. Write `0.0` and `1.0`.
