@@ -4603,3 +4603,59 @@ current page button); the same script read the old screenshot first to calibrate
   measure BLANK, not 0, where neither side has the value.
 - **PowerShell overload trap:** `[Math]::Max(0, $x)` and `[Math]::Min(1, $x)` with integer literals pick the Int32
   overload and round a double to 0 or 1. A ported colour check then reported 0 for every pair. Write `0.0` and `1.0`.
+
+#### 2026-11-23 round 28 (v2.0.0: Microsoft's powerbi-authoring skills become the core and this skill an overlay; the evidence behind each override)
+
+Microsoft published skills for Fabric (MIT, `microsoft/skills-for-fabric`, a Claude Code plugin marketplace named
+`fabric-collection`). Its `powerbi-authoring` plugin 0.3.23 carries `semantic-model-authoring` (about 14.9k tokens
+when it fires) and `powerbi-report-cli` (about 5.8k), registers the `powerbi-modeling-mcp` server through `npx`, and
+relies on the `powerbi-report-author` npm CLI (0.5.0 on install; its `doctor` listed 57 visual types and 16 container
+object groups) and on `az rest`. It covers what this skill never did: greenfield models, field parameters, connection
+binding, a DAX performance guide, report design, PBIR property metadata and validation, pack/unpack transport, Desktop
+and service preview with screenshots. It covers none of what this skill is for: surgery on existing models, engine
+verification, binding fidelity, DAX-to-M ports, RLS designs, writeback pages. v2.0.0 makes it the core; the 138 v1
+quick-reference rows moved verbatim into `references/` (nine topic files) and SKILL.md went from 81 KB to 27 KB.
+
+Core defaults that conflict with rules verified here (quoted from the 0.3.23 text):
+- Tier 1 MCP "for authoring ... against the model from any source: Power BI Desktop, Fabric workspace, or local PBIP
+  folder", "with immediate effect on the live model". A live XMLA write leaves the model without a PBIX download
+  (2026-10-23 round 2), and the next Desktop publish of the project replaces it.
+- Deploy: "If deploying a model that may already exist, delete the existing same-named model(s) *before* the single
+  deploy." Deleting the item drops its id and everything bound to it; update it in place by id instead.
+- "Task: Setting Descriptions in Power Query / M Code" comments each step and has you "Update the step name". Any
+  partition M text change drops that table's data on the next open (Iron Rule 1).
+- "Place measures before columns": reordering an existing file breaks anchor-based patch scripts.
+- The Format String Reference recommends scaling strings (`#,##0,,M`, `#,##0,K`); on a card with Auto display units
+  such a string rendered `42.5,,MM` (2026-09-20). Exactly one side may scale.
+- A DENY on role membership. This skill keeps an owner-approved route, now with the side effects stated: an XMLA role
+  write ends the PBIX download (2026-10-23 round 2), and on 2026-11-13 a model with Query Scale-Out refused the XMLA
+  role-member save ("not allowed for datasets that have Query Scale-Out enabled") while the model's Security page in
+  the service saved the same members and left the PBIX download in place.
+- The report skill's completion gate needs its CLI, and "PowerShell hand-walking" for transport "is not a supported
+  executable workflow"; without Node.js the core declares report work blocked, so the PowerShell route stays as the
+  fallback.
+- Its Desktop preview opens or attaches Desktop for the folder. A second Desktop next to one in use broke the other
+  window (round 7 above).
+- Design mode proposes tone, signature and archetypes; an owner asked for the least busy version without decorative
+  labels (2026-09-17), so project design rules win.
+
+Environment facts measured the same day on a Windows machine without admin rights:
+- The Node.js zip (SHA-256 checked against `SHASUMS256.txt`) and the Azure CLI zip package, each added to the user
+  PATH, install with no admin prompt; npm's global prefix is then the Node folder itself.
+- Where conditional access blocks the device-code flow, `az config set core.enable_broker_on_windows=false` plus
+  `az login --tenant <id> --allow-no-subscriptions` signed in through the browser, and `az rest` listed the workspaces.
+- Browser single sign-on had earlier (2026-10-14) silently used the device's account from another tenant; confirm the
+  account and tenant before the first call.
+- `claude plugin marketplace add 'owner/repo#<tag>'` pins a marketplace to a tag; a third-party marketplace does not
+  auto-update by default. Claude Code has no skill-to-skill dependency and no way to stop one plugin skill from
+  triggering, so the overlay loads through its own description plus one line in the user's CLAUDE.md. A plugin
+  installed mid-session is not in that session's skill list (plugins load at session start); read the core's SKILL.md
+  from the plugin cache until the next session.
+
+Probe before the push: a fresh agent with the overlay and the cached core ran seven scenarios (a redeploy over an
+existing model, a live MCP write to production, M step comments, `42.5,,MM`, a role member on the owner's request,
+Desktop screenshots next to another Desktop, adding a measure). It chose the overlay rule in every conflict and cited
+the right rows. The gaps it found were fixed before the push: the role-membership override now names the Security page
+and both XMLA side effects; "deletion-only" no longer reads as a ban on inserting a new object; a format-string
+override was added; each override names the core section it overrides; the load order says how to read the core from
+the plugin cache.
