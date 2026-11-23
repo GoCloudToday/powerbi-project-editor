@@ -4742,3 +4742,18 @@ would not.
   (`where az`) still list `az.cmd` first and run it. The zip (Content-MD5 of the download matched; `python.exe`
   signed by the Python Software Foundation) went to a user folder, its `bin` appended to the user PATH, kept as
   REG_EXPAND_SZ.
+
+#### 2026-11-23 round 30 (the editor restarted with no user PATH: Explorer dropped a long one)
+
+- **After the Azure CLI's folder was appended to the user PATH and the change broadcast (WM_SETTINGCHANGE,
+  "Environment"), the fully restarted editor resolved neither `az` nor any other user-level tool.** Its process
+  PATH was the machine PATH alone (56 entries, 2,104 characters). The registry still held the user PATH
+  (REG_EXPAND_SZ, 74 entries, 3,348 characters), and a fresh sign-in block built from it (`CreateEnvironmentBlock`)
+  contained everything. Explorer's own live environment, read from its process parameters, was the machine PATH
+  plus the new variables: its refresh had dropped the long user PATH, and every app it starts inherits that. A new
+  variable arriving while the user's PATH entries are missing is the signature.
+- **54 of the 74 user entries repeated machine entries** (a past copy of the whole PATH into the user PATH) and one
+  was listed twice. Removing them (19 entries, 1,295 characters, same value kind; the effective search order
+  checked identical, 65 directories in the same order) and broadcasting again gave Explorer the full PATH at once
+  (75 entries, 3,400 characters), with no sign-out. A sign-out and sign-in also rebuilds it, but the next broadcast
+  from any installer drops a long user PATH again.

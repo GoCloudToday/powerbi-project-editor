@@ -73,6 +73,11 @@ overrides as written, tell the user the core moved, and run the core update chec
   wrapper `bin/az` beside it, as the MSI install does: `export AZ_INSTALLER=ZIP`, then
   `exec "$(dirname "$(readlink -f "$0")")/../python.exe" -IBm azure.cli "$@"`. PowerShell and
   cmd keep running `az.cmd`. reference.md §2026-11-23 round 29.
+- **A long user PATH can vanish after the change:** Explorer rebuilds its environment on the change
+  broadcast and dropped a 3,348-character user PATH, keeping only the machine PATH, while new variables
+  did arrive; the restarted editor then found none of the user's tools. After a PATH change, check
+  Explorer's live PATH, not only the registry. Remove user entries that only repeat machine entries (here
+  74 to 19, same search order) or sign out and in. reference.md §2026-11-23 round 30.
 - **The modeling server's license:** `powerbi-modeling-mcp` refuses every tool until its EULA
   (https://go.microsoft.com/fwlink/?LinkId=2381247) is accepted. That is the user's step: the
   user environment variable `PBI_MODELING_MCP_ACCEPT_EULA=true` (then fully quit the editor) or
