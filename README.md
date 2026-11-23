@@ -42,6 +42,9 @@ theory — each Iron Rule broke a real model first.
 
 **1. Prerequisites.** Node.js 20+ and the Azure CLI on PATH: the core's report CLI and its
 modeling MCP server run on Node, and its Fabric calls use `az rest` after `az login`.
+Without admin rights both install per user (SKILL.md, Environment notes). Afterwards fully quit
+the editor (every window) and start it again. The modeling MCP refuses every tool until you accept
+its EULA: read it, then set the user environment variable `PBI_MODELING_MCP_ACCEPT_EULA=true`.
 
 **2. The core (Microsoft), required,** pinned to the version this overlay was tested against:
 

@@ -1468,6 +1468,8 @@ Format > General and look for a Tooltips section):
   card's report-page tooltip while the button shows through. Verified end-to-end.
   (It also works with the card BEHIND the button — a button does not swallow the hover —
   but on top is the safer layering, since it does not depend on that behaviour.)
+  A base theme that styles the card's `layout` background (CY26SU05) needs that layer at
+  100D too: §2026-11-02.
 - **`fillCustom.show = false` does NOT mean "no fill"** — it means "no CUSTOM fill", so
   the card falls back to the theme default, which is an OPAQUE WHITE face that hides
   anything beneath it. The same trap applies to the container `background`. For a
@@ -3629,6 +3631,37 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   an invoice exists, but it carries no quantity. Never express such a flag as a new value of a status column that
   report pages filter with NOT IN: the new value would silently count as sales.
 
+#### 2026-10-15 round 4 (join kinds an explicit join algorithm refuses; testing a whole dataflow offline; key formats a profile's MIN/MAX gives away)
+
+- **`Table.Join` with an explicit `JoinAlgorithm` refuses some join kinds, and only at evaluation.** Measured with
+  Excel's engine on two small tables: `JoinKind.LeftAnti` and `RightAnti` accept only `JoinAlgorithm.Dynamic`
+  (PairwiseHash, SortMerge, LeftHash, RightHash, LeftIndex and RightIndex all raise "The specified join algorithm
+  doesn't support the specified join kind."); `LeftIndex` also refuses RightOuter and FullOuter, `RightIndex`
+  LeftOuter and FullOuter; Inner works with all of them. `LeftHash` with LeftOuter returns the unmatched left rows
+  LAST. A Gen1 document with `Table.Join(..., JoinKind.LeftAnti, JoinAlgorithm.LeftHash)` saves without complaint and
+  fails every entity that depends on it at refresh. An anti join with a hash algorithm: add a constant marker column
+  (`each true`) to the distinct right table, join `JoinKind.LeftOuter`, keep the rows whose marker is null.
+- **Testing a changed Gen1 dataflow before it exists: run both complete documents through Excel's mashup engine with
+  only the source queries swapped.** Split the section document into `[name, formula]` pairs; replace
+  `SharePoint.Files(site)` with `Folder.Files(<local copies of the files>)` and `Sql.Database(...)` with a typed
+  `Csv.Document(File.Contents(...))`; add every query to one workbook (`Queries.FastCombine = $true`), load each
+  entity to a sheet, read `Range.Value2` and write the CSV with a small `Add-Type` C# helper (a PowerShell cell loop
+  takes minutes). Assert that the tested M is byte-identical to the shipped JSON except those two queries. Gates, old
+  against new on the same inputs: every entity evaluates, no error cells, columns = entity attributes (names and
+  order); per-order totals; unchanged documents identical, compared as MULTISETS of whole rows (plug documents repeat
+  their keys, so a key merge cross-joins them and reports false mismatches); the integrity the model relies on. Two
+  companies took 447 s (old) against 265 s (new) for six entities; three instances ran side by side at about 1 GB each.
+  The test data must reproduce the behaviour under test: invoice lines generated whole on one invoice gave 21 false
+  "date changed" findings, and spreading each order's invoiced lines over its own invoices by their net amounts
+  removed them.
+- **Profile the FORMAT of every key you join on, not only MIN/MAX.** In a lakehouse invoice-line table the numbers look
+  like `SO-001234`, but the MAX values were `xx01SO-007470` and `yy01SO-000359` (company prefix glued on; lower case
+  sorts last in a BIN2 collation), so an unknown number of rows use another key format. Stripping the prefix and
+  joining could count an invoiced quantity twice if those rows mirror normal ones. Leave them out, so the lines
+  concerned keep the old behaviour, and count them with a pattern query (`LIKE '[a-z][a-z][0-9][0-9]%'`) before
+  deciding. The same goes for invoice lines that match no line of an order the export has (line 0): leave them out,
+  and treat that order as incompletely seen.
+
 #### 2026-10-20 (rebuilding a stale PBIP from the service with its data; an amount repeated per account attribute; emulating a fix with query-scoped measures)
 
 - **When the local PBIP is older than the published model, rebuild it from the service, data included.** The local
@@ -4305,6 +4338,27 @@ current page button); the same script read the old screenshot first to calibrate
 - **`BACKUP` is a reserved word in T-SQL**: `CREATE SCHEMA backup` failed with "Incorrect syntax near the keyword
   'backup'". Name the schema `archive` (or bracket it).
 
+#### 2026-11-02 (a see-through card turns white under a newer base theme)
+
+- **A base theme can style a card's `layout` background, which neither the card face nor the container covers.**
+  The info-icon pattern of 2026-08-21 (a `cardVisual` over an information-icon button; face `fillCustom` and
+  container `background` both `show:true` + `transparency:100D`; outline, title and header off) was copied verbatim
+  from a report on the older base theme CY19SU06 into a generated report on CY26SU05, and the owner saw a white
+  square over every icon. CY19SU06 has no `cardVisual` styles at all; CY26SU05 sets
+  `visualStyles.cardVisual.*.layout` with `$id: default` and `backgroundShow: true`, and in theme schema 2.159
+  `layout` carries its own `backgroundShow`, `backgroundFillColor` and `backgroundTransparency`. Every other layer
+  of the card was already explicit and transparent. The fix, a second `layout` entry beside the one with the tile
+  settings: `{"properties": {"backgroundShow": {"expr": {"Literal": {"Value": "true"}}}, "backgroundFillColor":
+  <white>, "backgroundTransparency": {"expr": {"Literal": {"Value": "100D"}}}}, "selector": {"id": "default"}}`.
+  It stays shown, like the face, so the hover surface is unchanged. Regenerated, exactly the 11 overlay
+  `visual.json` files differed (117 identical, none added or removed); the owner checked it in Desktop and
+  published it.
+- **Gate it from the theme, not from the report you copied.** The test reads the base theme's default-scope
+  `backgroundShow` objects for the visual type (calibrated: for CY26SU05 exactly `{"layout"}`) and requires each
+  one explicit and at 100D in every generated overlay card. It failed first on the old generator (RED: it and the
+  verbatim-objects test, 2 failures), then passed. Objects copied verbatim from a report on another base theme are
+  only as complete as that theme's defaults.
+
 #### 2026-11-07 round 18 (an inventory of the report elements left without data after source columns went missing)
 
 - **A static closure over-reports by an order of magnitude when measures branch on a selector table.** 18 source
@@ -4677,3 +4731,14 @@ using this tool. Review https://go.microsoft.com/fwlink/?LinkId=2381247, then ca
 the user's word, was refused by the agent's own permission check as an unwanted action. Accepting a license is the
 user's step; the user environment variable survives plugin updates, a `--accept-eula` edit in the cached plugin config
 would not.
+
+#### 2026-11-23 round 29 (installing the core on a second Windows machine without admin rights)
+
+- **Git Bash does not run the Azure CLI zip package as `az`.** The zip ships only `bin\az.cmd`. With that folder on
+  PATH, Git Bash (the agent's Bash tool on Windows, where the core's `az rest` lines run) answered
+  `az: command not found`, while `az.cmd version` worked. A bash wrapper `bin/az` beside it, the same call as az.cmd
+  (`export AZ_INSTALLER=ZIP`, then `exec "$(dirname "$(readlink -f "$0")")/../python.exe" -IBm azure.cli "$@"`),
+  fixed it: `type az` found the wrapper and `az version` printed 2.93.0. PowerShell (`Get-Command az -All`) and cmd
+  (`where az`) still list `az.cmd` first and run it. The zip (Content-MD5 of the download matched; `python.exe`
+  signed by the Python Software Foundation) went to a user folder, its `bin` appended to the user PATH, kept as
+  REG_EXPAND_SZ.

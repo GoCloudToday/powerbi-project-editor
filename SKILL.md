@@ -68,6 +68,11 @@ overrides as written, tell the user the core moved, and run the core update chec
   then fully quit the editor (every window: a window reload keeps the old main process and its
   PATH) and start it again. A plugin MCP server that failed to start is skipped for about 15
   minutes; once the cause is fixed, reconnect it from `/mcp`.
+- **Git Bash and the Azure CLI zip:** the zip ships only `bin\az.cmd`, which Git Bash (the agent's
+  Bash tool on Windows, where the core's `az rest` lines run) does not resolve as `az`. Put a bash
+  wrapper `bin/az` beside it, as the MSI install does: `export AZ_INSTALLER=ZIP`, then
+  `exec "$(dirname "$(readlink -f "$0")")/../python.exe" -IBm azure.cli "$@"`. PowerShell and
+  cmd keep running `az.cmd`. reference.md §2026-11-23 round 29.
 - **The modeling server's license:** `powerbi-modeling-mcp` refuses every tool until its EULA
   (https://go.microsoft.com/fwlink/?LinkId=2381247) is accepted. That is the user's step: the
   user environment variable `PBI_MODELING_MCP_ACCEPT_EULA=true` (then fully quit the editor) or
@@ -145,7 +150,11 @@ overrides as written, tell the user the core moved, and run the core update chec
    a buffered side degrades to a NESTED LOOP (92k×92k ≈ hours; signature: slow,
    CPU-busy, memory-healthy) — use `Table.Join(..., JoinAlgorithm.LeftHash)` with
    `Table.Distinct` on the lookup key (Table.Join multiplies rows on duplicate keys;
-   Distinct restores single-match semantics). Per-row comparer lambdas
+   Distinct restores single-match semantics). **An anti join takes no hash algorithm:**
+   `JoinKind.LeftAnti`/`RightAnti` accept only `JoinAlgorithm.Dynamic`; LeftHash or any other
+   saves without complaint and fails at refresh. A fast anti join = LeftOuter onto the distinct
+   keys plus a constant marker column, then keep the rows whose marker is null (reference.md
+   §2026-10-15 round 4). Per-row comparer lambdas
    (`List.Contains(xs, x, ci)` × 92k rows ≈ 70M calls) → pre-normalize once into
    buffered ordinal lists. Big-entity aggregation stays DAX calc columns over loaded
    tables (compressed engine scan); M gets row-local transforms and small joins.
@@ -230,6 +239,7 @@ is new: handle it with the core and the Iron Rules, then record it (self-iterati
 - Styling a hand-generated report
 - Hand-built chart: series colour, constant line, dynamic title
 - Card visual looks wrong
+- A see-through card over an icon renders as a white square (newer base theme)
 - Table/matrix cell colours (conditional formatting)
 - Table/matrix draws a horizontal scrollbar
 - Matrix shows each row level on its own line (a staircase) although stepped layout is off
@@ -301,6 +311,8 @@ is new: handle it with the core and the Iron Rules, then record it (self-iterati
 - Composite model: an all-zero empty line in a table grouped by a dual dimension, `(Blank)` in its slicers
 - DirectQuery over `Sql.Database`: every visual query takes seconds
 - A merge's expand list names a column the right-hand query does not output
+- Testing a changed Gen1 dataflow end to end before it may be deployed (no service, no sign-in)
+- A join key whose MIN/MAX look uniform
 - TDS/SQL connections die during pre-login or login TLS ("forcibly closed", "handshake timed out"), worse in parallel, while HTTPS APIs work
 
 **[references/dax-logic.md](references/dax-logic.md)**: DAX logic and numbers
