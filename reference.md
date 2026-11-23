@@ -4659,3 +4659,6 @@ the right rows. The gaps it found were fixed before the push: the role-membershi
 and both XMLA side effects; "deletion-only" no longer reads as a ban on inserting a new object; a format-string
 override was added; each override names the core section it overrides; the load order says how to read the core from
 the plugin cache.
+
+Owner decision the same day (v2.1.0): the core is a requirement, not optional. Without it the skill stops and asks for
+the install, and goes on with the overlay alone only on the user's explicit word.

@@ -10,6 +10,11 @@ plugin: `semantic-model-authoring` and `powerbi-report-cli`) is the core for wor
 tooling and greenfield guidance. This skill adds what was earned on real production models,
 and where the two disagree the overlay wins; every override cites what broke.
 
+> **Requirement:** Microsoft's `powerbi-authoring` plugin must be installed (see Install,
+> steps 1 and 2). This skill is an overlay on it, not a replacement. When the plugin is
+> missing, Claude stops and asks you to install it, and goes on with the overlay alone only
+> if you say so.
+
 Every rule in this skill was earned on real production models: model trims and full
 rewrites, a 31→19-table folding campaign, DAX↔M ports verified row-by-row against
 92k-row snapshots, silent frontend regressions caught and root-caused. Nothing here is
@@ -38,7 +43,7 @@ theory — each Iron Rule broke a real model first.
 **1. Prerequisites.** Node.js 20+ and the Azure CLI on PATH: the core's report CLI and its
 modeling MCP server run on Node, and its Fabric calls use `az rest` after `az login`.
 
-**2. The core (Microsoft),** pinned to the version this overlay was tested against:
+**2. The core (Microsoft), required,** pinned to the version this overlay was tested against:
 
 ```bash
 claude plugin marketplace add 'microsoft/skills-for-fabric#v0.3.23'
@@ -69,7 +74,7 @@ core's skills trigger on their own, so add this line to `~/.claude/CLAUDE.md`:
 When a powerbi-authoring skill (semantic-model-authoring or powerbi-report-cli) is used, also load the powerbi-project-editor skill and apply its overrides; they win on conflict.
 ```
 
-Without the core installed, the overlay still works on its own, as it did before v2.0.0.
+The overlay requires the core. If it is missing, Claude stops and asks you to install it.
 
 ## Update
 

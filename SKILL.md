@@ -1,9 +1,13 @@
 ---
 name: powerbi-project-editor
-description: Field-earned overlay for any Power BI semantic model or report work (PBIP, TMDL, PBIR, DAX, M, Gen1 dataflows, RLS, publishing, verification). Use it together with, and on top of, Microsoft's powerbi-authoring skills (semantic-model-authoring, powerbi-report-cli), which are the core; where they disagree this overlay wins. Covers safe edits to existing models (M cache invalidation, deletion closures, stale Desktop sessions), engine-backed verification (msmdsrv, Invoke-ASCmd, DISCOVER_CALC_DEPENDENCY, cache.abf, captured-query replay), report binding fidelity, DAX-to-M ports, RLS designs, writeback pages and publish traps.
+description: Field-earned overlay for any Power BI semantic model or report work (PBIP, TMDL, PBIR, DAX, M, Gen1 dataflows, RLS, publishing, verification). Use it together with, and on top of, Microsoft's powerbi-authoring skills (semantic-model-authoring, powerbi-report-cli), which are the core and must be installed; where they disagree this overlay wins. Covers safe edits to existing models (M cache invalidation, deletion closures, stale Desktop sessions), engine-backed verification (msmdsrv, Invoke-ASCmd, DISCOVER_CALC_DEPENDENCY, cache.abf, captured-query replay), report binding fidelity, DAX-to-M ports, RLS designs, writeback pages and publish traps.
 ---
 
 # Power BI Project Editor (overlay on the Microsoft core)
+
+> **Requires Microsoft's `powerbi-authoring` plugin** (skills for Fabric,
+> `microsoft/skills-for-fabric`, tested with 0.3.23) **to be installed.** This skill is an
+> overlay on it, not a replacement. Install steps: [README.md](README.md), "Install".
 
 Operational rules for programmatic Power BI work, earned through verified failures. Since v2.0.0
 this skill is an overlay: Microsoft's `powerbi-authoring` plugin from skills for Fabric
@@ -27,8 +31,9 @@ under `tools/` — if present, adapt it; the recipes in reference.md are suffici
    (a cache folder alone can be a leftover). Installed but not loaded yet (plugins load at session
    start): read the core skill from the plugin cache
    (`~/.claude/plugins/cache/fabric-collection/powerbi-authoring/<version>/skills/<skill>/SKILL.md`)
-   and follow it from there. If the plugin is not installed, this skill still works alone, as it
-   did before v2.0.0; say once that the core is missing and point to the README install steps.
+   and follow it from there. **Not installed: stop and tell the user that this skill requires
+   it**, with the install commands (README, "Install", steps 1 and 2). Go on with this overlay
+   alone only if the user explicitly says so, and say in the result that the core was not used.
 
 Tested against core **0.3.23** (`microsoft/skills-for-fabric`, tag `v0.3.23`). The core ships
 weekly and has renamed skills before. If the installed version differs (`claude plugin details
