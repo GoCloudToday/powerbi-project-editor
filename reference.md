@@ -4662,3 +4662,11 @@ the plugin cache.
 
 Owner decision the same day (v2.1.0): the core is a requirement, not optional. Without it the skill stops and asks for
 the install, and goes on with the overlay alone only on the user's explicit word.
+
+Same evening (v2.2.0): the first editor restart was a window reload. The editor's main process, started hours before
+the installs, kept the old PATH: the plugin's MCP server failed with `'npx' is not recognized as an internal or external
+command` (its log sits in the CLI cache folder under `mcp-logs-plugin-powerbi-authoring-powerbi-modeling-mcp`), and
+`node`, `az` and `powerbi-report-author` were missing from the agent's shell too. Started by hand with Node on the PATH,
+the server answered `initialize` as "Power BI Authoring MCP Server (Local)" 1.0.1. After a full quit and relaunch all
+four commands resolved, but the failed connection stayed cached: "Skipping connection (recent failure cached retries
+automatically in 15 min, or edit the plugin config to retry now)". Reconnect it from `/mcp` instead of waiting.

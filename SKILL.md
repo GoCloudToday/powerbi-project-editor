@@ -65,7 +65,9 @@ overrides as written, tell the user the core moved, and run the core update chec
   server (run through `npx` by the plugin), and the Azure CLI for every Fabric call (`az rest`).
   Without admin rights, install both per user: the Node.js zip from nodejs.org (check its
   SHA-256 against `SHASUMS256.txt`) and the Azure CLI zip package, each added to the user PATH;
-  restart the editor so the agent's environment sees the new PATH.
+  then fully quit the editor (every window: a window reload keeps the old main process and its
+  PATH) and start it again. A plugin MCP server that failed to start is skipped for about 15
+  minutes; once the cause is fixed, reconnect it from `/mcp`.
 - **Sign-in:** where conditional access blocks the device-code flow,
   `az config set core.enable_broker_on_windows=false`, then
   `az login --tenant <tenant id> --allow-no-subscriptions` signs in through the browser.
