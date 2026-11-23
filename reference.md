@@ -3643,7 +3643,7 @@ discrepancy. The page's definition came from Fabric `getDefinition` on the repor
   (`each true`) to the distinct right table, join `JoinKind.LeftOuter`, keep the rows whose marker is null.
 - **Testing a changed Gen1 dataflow before it exists: run both complete documents through Excel's mashup engine with
   only the source queries swapped.** Split the section document into `[name, formula]` pairs; replace
-  `SharePoint.Files(site)` with `Folder.Files(<local copies of the files>)` and `Sql.Database(...)` with a typed
+  the document library's `.Files(site)` listing with `Folder.Files(<local copies of the files>)` and `Sql.Database(...)` with a typed
   `Csv.Document(File.Contents(...))`; add every query to one workbook (`Queries.FastCombine = $true`), load each
   entity to a sheet, read `Range.Value2` and write the CSV with a small `Add-Type` C# helper (a PowerShell cell loop
   takes minutes). Assert that the tested M is byte-identical to the shipped JSON except those two queries. Gates, old
