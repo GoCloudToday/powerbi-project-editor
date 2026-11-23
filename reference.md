@@ -4560,3 +4560,24 @@ current page button); the same script read the old screenshot first to calibrate
   the visible windows of the process). Kill it when nobody is there to sign in, and tell membership by effect instead:
   executeQueries with impersonatedUserName refuses a person in no role (RLSNotAuthorizedForModel) and answers a role
   member. A person who is in several groups of the role can't prove which group lets them in.
+
+#### 2026-11-23 round 26 (a new model and its report created through the items API without Desktop; a name clash only the service catches)
+
+- **The service refuses a measure that has the name of a column of its own table; the offline TMDL deserializer accepts
+  it.** A generated model gave four hidden helper columns the names of the measures that aggregate them. It passed
+  `TmdlSerializer::DeserializeDatabaseFromFolder` and a check that every DAX reference resolves, and the items API create
+  failed after about 10 s: `Dataset_Import_FailedToImportDataset` ... "Failed to save modifications to the server. Error
+  returned: 'The '<name>' ..." (it names the first clash only). Nothing was created: the workspace listing showed no
+  partial item. Rule: the generator's gate checks, per table, that no measure name equals a column name (ignoring case)
+  and that measure names are unique in the model. It was calibrated on the refused model (it reported all four), then
+  the columns were renamed and the create went through.
+- **A brand-new model plus a report bound to it, with no Desktop, in one script.** POST `semanticModels` with `folderId`
+  and the TMDL parts (`definition.pbism` + `definition/**.tmdl`). Then generate the report with `definition.pbir`
+  `byConnection` on the new model id into a temp folder outside the synced library, and POST `reports` with `folderId`
+  (`definition.pbir` + `definition/**` + `StaticResources/**`). Both are long-running operations (poll the `Location`).
+  A SQL-sourced model's first refresh fails with `ModelRefreshFailed_CredentialsNotSpecified` until the owner signs in
+  the data source once in the model's settings; never set it by script, because a cloud credential is shared by all of
+  the owner's items. Prove the workspace change: list the items before and after, and require exactly the two new ids.
+- **A measure that should draw 0, not a gap, in a trend line:** `SUMX(fact, fact[value] * fact[flag])` returns 0 for a
+  series that has rows but no flagged row, and BLANK only where the series has no rows at all. A
+  `CALCULATE(SUM(...), flag = 1)` returns BLANK and leaves that series without a line.
