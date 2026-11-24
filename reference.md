@@ -4757,3 +4757,16 @@ would not.
   checked identical, 65 directories in the same order) and broadcasting again gave Explorer the full PATH at once
   (75 entries, 3,400 characters), with no sign-out. A sign-out and sign-in also rebuilds it, but the next broadcast
   from any installer drops a long user PATH again.
+
+#### 2026-11-24 round 31 (the core's modeling server missed Claude Code's 30-second connect limit)
+
+- **Twice in one day the plugin's `powerbi-modeling-mcp` did not connect at a session start:** the MCP log showed
+  "Starting connection with timeout of 30000ms", then `Connection failed after 32611ms ... (CONNECT_TIMEOUT)` and,
+  an hour later, the same after 32524 ms. Not a download: npx's cache already held 1.0.1, the version npm listed as
+  latest. Not the PATH either: `node`, `npx`, `az` and `powerbi-report-author` all resolved in the same session. A
+  reconnect from `/mcp` connected, `connection_operations ListLocalInstances` answered, and after a reboot the next
+  session start connected within the limit.
+- **The limit comes from `MCP_TIMEOUT` (milliseconds)**: the Claude Code binary reads `MCP_TIMEOUT` for the connect
+  limit (`CLAUDE_CODE_SYNC_PLUGINS_MCP_TIMEOUT_MS`, which also matches a search for the name, is a plugin-sync
+  setting). Set as a user environment variable (`MCP_TIMEOUT=60000`) it is read only by an editor started
+  afterwards; the session that set it still logged 30000 ms. Check the log line before trusting the new limit.

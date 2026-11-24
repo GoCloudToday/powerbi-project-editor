@@ -68,6 +68,11 @@ overrides as written, tell the user the core moved, and run the core update chec
   then fully quit the editor (every window: a window reload keeps the old main process and its
   PATH) and start it again. A plugin MCP server that failed to start is skipped for about 15
   minutes; once the cause is fixed, reconnect it from `/mcp`.
+- **The modeling server can miss the 30-second connect limit:** `CONNECT_TIMEOUT` after about
+  32 s at a session start, with the package already cached; a reconnect from `/mcp` worked.
+  Raise the limit with the user environment variable `MCP_TIMEOUT=60000` (milliseconds; it applies
+  from the next editor start, and the MCP log's "Starting connection with timeout of ...ms" line
+  shows the limit in use). reference.md §2026-11-24 round 31.
 - **Git Bash and the Azure CLI zip:** the zip ships only `bin\az.cmd`, which Git Bash (the agent's
   Bash tool on Windows, where the core's `az rest` lines run) does not resolve as `az`. Put a bash
   wrapper `bin/az` beside it, as the MSI install does: `export AZ_INSTALLER=ZIP`, then
